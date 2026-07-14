@@ -19,7 +19,8 @@
     "iot_operator": "./packages/decepticon/decepticon/agents/standard/iot_operator.py:graph",
     "ics_operator": "./packages/decepticon/decepticon/agents/standard/ics_operator.py:graph",
     "forensicator": "./packages/decepticon/decepticon/agents/standard/forensicator.py:graph",
-    "supply_chain_operator": "./packages/decepticon/decepticon/agents/standard/supply_chain_operator.py:graph"
+    "supply_chain_operator": "./packages/decepticon/decepticon/agents/standard/supply_chain_operator.py:graph",
+    "gnss_auditor": "./packages/decepticon/decepticon/agents/standard/gnss_auditor.py:graph"
   },
   "env": ".env",
   "python_version": "3.13",

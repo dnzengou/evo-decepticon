@@ -129,3 +129,6 @@ benchmark/results/XBEN-*-24/run-loop*.log
 
 # Internal design docs (specs/plans) — local only, not part of OSS distribution
 docs/superpowers/
+
+# EvoMetaClaw trajectory-data run dir (genomes.jsonl / signals.jsonl)
+evo-metaclaw-run/
