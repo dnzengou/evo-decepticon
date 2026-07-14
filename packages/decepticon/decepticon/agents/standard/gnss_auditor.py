@@ -19,7 +19,9 @@ Tool surface (all via bash for the OSS bootstrap):
 
   - gnss-sdr / RTKLIB / SDRAngel for record + replay analysis.
   - gnss-sim / GPS-SDR-SIM (authorization-gated) for controlled spoof.
-  - python3 with helpers under skills/standard/gnss/*/scripts/.
+  - python3 with helpers alongside each SKILL.md under
+    skills/standard/gnss/<skill>/ (e.g. mac_grover_score.py,
+    root_sig_audit.py, walk_spoof.py).
 """
 
 from __future__ import annotations
