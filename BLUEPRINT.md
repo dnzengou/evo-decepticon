@@ -75,16 +75,16 @@ engagement.
 
 ### v1.0.6 (2026-07-14) — GNSS + EvoMetaClaw cut
 
-- ✅ EvoMetaClaw core (`decepticon/core/evo_metaclaw.py`) — Q-gate + GRPO buffer + circuit-breaker + file-backed genome store
-- ✅ EvoMetaClaw signal capture wired into `engagement_loop.py` (exception-swallowed, never breaks the loop)
-- ✅ GNSS Auditor agent (`decepticon/agents/gnss_auditor.py`) + prompt
-- ✅ TESLA PQC audit skill (`skills/gnss/tesla-pqc-audit/`) with `mac_grover_score.py` + `root_sig_audit.py`
-- ✅ Signal-disruption skill (`skills/gnss/signal-disruption/`) with authorization gate + `walk_spoof.py`
-- ✅ 14 unit tests for evo_metaclaw core, all green (< 0.1s)
-- ✅ 30-second commercial demo (`demo/gnss_pqc_demo.py`)
+- ✅ EvoMetaClaw core (`packages/decepticon/decepticon/core/evo_metaclaw.py`) — Q-gate + GRPO buffer + circuit-breaker + file-backed genome store (~280 loc, stdlib-only)
+- ✅ EvoMetaClaw signal capture in `packages/decepticon/decepticon/core/engagement_loop.py` (exception-swallowed at every call site, never breaks the loop)
+- ✅ GNSS Auditor agent (`packages/decepticon/decepticon/agents/standard/gnss_auditor.py`) + prompt + role registered in `SLOTS_PER_ROLE`
+- ✅ TESLA PQC audit skill (`packages/decepticon/decepticon/skills/standard/gnss/tesla-pqc-audit/`) with `mac_grover_score.py` + `root_sig_audit.py` + `references/pqc-signature-comparison.md`
+- ✅ Signal-disruption skill (`packages/decepticon/decepticon/skills/standard/gnss/signal-disruption/`) with authorization gate + `walk_spoof.py` + `rf-safety-checklist.md`
+- ✅ 16 unit tests for evo_metaclaw core, all green (0.08s)
+- ✅ 30-second commercial demo (`demo/gnss_pqc_demo.py`) — 3/3 HIGH findings, < 1 s
 - ✅ Strategic moat doc (`docs/evo-metaclaw.md`)
-- ✅ Web AGENTS registry gained `gnss_auditor` entry (satellite icon, Domain Specialist role)
-- ✅ langgraph.json + docs/skills.md + docs/agents.md + README.md updated
+- ✅ Web AGENTS registry gained `gnss_auditor` entry (cyan, Domain Specialist role)
+- ✅ `langgraph.json` now serves 20 graphs (added `gnss_auditor`); `.gitignore` covers `evo-metaclaw-run/`
 
 ### v1.1 (planned)
 
@@ -100,27 +100,26 @@ engagement.
 ## File Manifest — v1.0.6 additions
 
 ```
-BLUEPRINT.md                                          NEW  this file
-README.md                                             MOD  GNSS section, demo, moat, badges
-.gitignore                                            MOD  evo-metaclaw-run/
-langgraph.json                                        MOD  gnss_auditor graph
-decepticon/core/evo_metaclaw.py                       NEW  moat core (~280 loc)
-decepticon/core/engagement_loop.py                    MOD  Signal capture hook
-decepticon/agents/gnss_auditor.py                     NEW  specialist agent
-decepticon/agents/prompts/gnss_auditor.md             NEW  agent prompt
-skills/gnss/tesla-pqc-audit/SKILL.md                  NEW  TESLA/PQC playbook
-skills/gnss/tesla-pqc-audit/scripts/mac_grover_score.py   NEW
-skills/gnss/tesla-pqc-audit/scripts/root_sig_audit.py     NEW
-skills/gnss/tesla-pqc-audit/references/pqc-signature-comparison.md   NEW
-skills/gnss/signal-disruption/SKILL.md                NEW  jamming/spoofing playbook
-skills/gnss/signal-disruption/scripts/walk_spoof.py   NEW
-skills/gnss/signal-disruption/references/rf-safety-checklist.md      NEW
-demo/gnss_pqc_demo.py                                 NEW  30-second commercial demo
-docs/evo-metaclaw.md                                  NEW  strategic moat writeup
-docs/skills.md                                        MOD  gnss/ category + agent mapping
-docs/agents.md                                        MOD  GNSS Auditor row
-clients/web/src/lib/agents.ts                         MOD  gnss_auditor display entry
-tests/unit/core/test_evo_metaclaw.py                  NEW  14 tests, all green
+BLUEPRINT.md                                                                   NEW  this file
+.gitignore                                                                     MOD  evo-metaclaw-run/
+langgraph.json                                                                 MOD  gnss_auditor graph (20 total)
+packages/decepticon/decepticon/core/evo_metaclaw.py                            NEW  moat core (~280 loc, stdlib only)
+packages/decepticon/decepticon/core/engagement_loop.py                         NEW  signal-capture driver (exception-swallowed)
+packages/decepticon/decepticon/agents/standard/gnss_auditor.py                 NEW  specialist agent factory + SUBAGENT_SPEC
+packages/decepticon/decepticon/agents/prompts/standard/gnss_auditor.md         NEW  agent system prompt
+packages/decepticon-core/decepticon_core/contracts/slots.py                    MOD  gnss_auditor role added to SLOTS_PER_ROLE
+packages/decepticon/decepticon/skills/standard/gnss/SKILL.md                   NEW  suite index
+packages/decepticon/decepticon/skills/standard/gnss/tesla-pqc-audit/SKILL.md   NEW  TESLA/PQC playbook
+packages/decepticon/decepticon/skills/standard/gnss/tesla-pqc-audit/mac_grover_score.py         NEW
+packages/decepticon/decepticon/skills/standard/gnss/tesla-pqc-audit/root_sig_audit.py           NEW
+packages/decepticon/decepticon/skills/standard/gnss/tesla-pqc-audit/references/pqc-signature-comparison.md   NEW
+packages/decepticon/decepticon/skills/standard/gnss/signal-disruption/SKILL.md                  NEW  jam/spoof playbook
+packages/decepticon/decepticon/skills/standard/gnss/signal-disruption/walk_spoof.py             NEW
+packages/decepticon/decepticon/skills/standard/gnss/signal-disruption/rf-safety-checklist.md    NEW
+demo/gnss_pqc_demo.py                                                          NEW  30-second commercial demo (< 1 s)
+docs/evo-metaclaw.md                                                           NEW  strategic moat writeup
+clients/web/src/lib/agents.ts                                                  MOD  gnss_auditor display entry (cyan tile)
+tests/unit/core/test_evo_metaclaw.py                                           NEW  16 tests, all green
 ```
 
 ---
@@ -129,13 +128,13 @@ tests/unit/core/test_evo_metaclaw.py                  NEW  14 tests, all green
 
 | Gate | Status |
 |------|--------|
-| `pytest tests/unit/core/test_evo_metaclaw.py` | ✅ 14/14 in 0.08s |
-| `python -c "import ast; ast.parse(open(f).read())"` on all new .py | ✅ |
-| `json.load(open('langgraph.json'))` | ✅ |
-| `python demo/gnss_pqc_demo.py` | ✅ 3 findings, 2 P0 |
-| Skills conform to frontmatter spec (name, description) | ✅ |
-| Authorization gate on physical-layer skills | ✅ enforced first |
-| EvoMetaClaw signal capture is exception-swallowed | ✅ |
+| `DECEPTICON_SKIP_BOOT=1 pytest tests/unit/core/test_evo_metaclaw.py` | ✅ 16/16 in 0.08s |
+| `python -c "import ast; ast.parse(open(f).read())"` on all 8 new .py | ✅ |
+| `json.load(open('langgraph.json'))` — 20 graphs | ✅ |
+| `python demo/gnss_pqc_demo.py` | ✅ 3 findings, 3 HIGH |
+| Skills conform to frontmatter spec (name, description) | ✅ 3/3 |
+| Authorization gate on physical-layer skills | ✅ `walk_spoof.py` refuses without RoE |
+| EvoMetaClaw signal capture is exception-swallowed | ✅ `EngagementLoop.step` catches |
 | No hardcoded secrets in new code | ✅ |
 
 ---
@@ -144,11 +143,11 @@ tests/unit/core/test_evo_metaclaw.py                  NEW  14 tests, all green
 
 ### v1.0.6 — 2026-07-14
 - New: EvoMetaClaw core + engagement-loop signal capture (moat)
-- New: GNSS Auditor agent + `skills/gnss/` category (TESLA/PQC + jam/spoof)
-- New: 30-second commercial demo
+- New: GNSS Auditor agent + `skills/standard/gnss/` category (TESLA/PQC + jam/spoof)
+- New: 30-second commercial demo (`demo/gnss_pqc_demo.py`)
 - New: BLUEPRINT.md, docs/evo-metaclaw.md
-- Test: 14 new unit tests for evo_metaclaw core
-- UX: web dashboard shows GNSS Auditor tile
+- Test: 16 new unit tests for evo_metaclaw core (0.08 s)
+- UX: web dashboard shows GNSS Auditor tile (cyan, Domain Specialist)
 
 ### v1.0.x — prior
 Historical entries live in `pyproject.toml` version bumps and git tags.
