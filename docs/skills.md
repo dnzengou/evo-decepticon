@@ -66,6 +66,7 @@ at the virtual prefix `/skills/`. The tree has three roots:
 | `/skills/standard/phisher/` | Phisher | Lure deconfliction and phishing operations |
 | `/skills/standard/mobile/` | MobileOperator | Android / iOS application attacks |
 | `/skills/standard/wireless/` | WirelessOperator | Wireless / RF attacks |
+| `/skills/standard/gnss/` | GNSSAuditor | TESLA / OSNMA / HAS PQC audits and receiver walk-off resilience (chamber-only TX) |
 | `/skills/standard/decepticon/` | Decepticon | Core orchestration procedures (engagement lifecycle, kill-chain analysis, final report) |
 | `/skills/plugins/scanner/` | Scanner | Vulnerability scanning, automated tool integration |
 | `/skills/plugins/exploiter/` | Exploiter | PoC generation, CVE reproduction, weaponization |
