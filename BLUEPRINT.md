@@ -68,7 +68,8 @@ engagement.
 | VS Code / Cursor MCP | 🔲 | planned — expose GNSS auditor + KG tools |
 | Homebrew formula | 🔲 | planned |
 | Community Skill Marketplace | 🔲 | planned — third-party skills via manifest |
-| GNSS Auditor demo (static) | ✅ v1.0.7 | GitHub Pages — [dnzengou.github.io/evo-decepticon](https://dnzengou.github.io/evo-decepticon/) |
+| GNSS Auditor demo (local) | ✅ v1.0.7 | `git clone && open demo/gnss_auditor_ui.html` (offline-safe) |
+| GNSS Auditor demo (Pages) | 🔲 v1.0.7 | Workflow ready — needs Pages enabled (public repo or paid plan) |
 
 ---
 
@@ -80,7 +81,7 @@ engagement.
 - ✅ `demo/index.html` redirect landing (Pages root → GNSS Auditor demo)
 - ✅ `demo/README.md` explains both demos (browser UI + CLI)
 - ✅ README ▶ Try the GNSS Auditor demo CTA above Install (DEMO-BEFORE-INSTALL)
-- ✅ `.github/workflows/demo-pages.yml` publishes `demo/` subtree to GitHub Pages on push
+- ✅ `.github/workflows/demo-pages.yml` — `workflow_dispatch` trigger; publishes `demo/` subtree to GitHub Pages when enabled (private-repo Pages requires plan upgrade or public visibility)
 - ✅ `docs/user-manual.md` landed on `main` (was stranded on feat branch)
 
 ### v1.0.6 (2026-07-14) — GNSS + EvoMetaClaw cut

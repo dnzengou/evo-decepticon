@@ -5,9 +5,13 @@ EvoMetaClaw flywheel do without installing the full stack.
 
 ## GNSS Auditor — interactive browser UI
 
-**Live:** [https://dnzengou.github.io/evo-decepticon/](https://dnzengou.github.io/evo-decepticon/) (once GitHub Pages is enabled)
+**Local (works today):** clone the repo and open [`gnss_auditor_ui.html`](gnss_auditor_ui.html) in a browser. The page runs off `file://` with no server.
 
-**Local:** open [`gnss_auditor_ui.html`](gnss_auditor_ui.html) directly in a browser.
+**Live URL (once enabled):** the [`demo-pages`](../.github/workflows/demo-pages.yml) workflow deploys this folder to GitHub Pages. To activate:
+
+1. Make the repo public **or** upgrade to a plan that supports Pages on private repos.
+2. Trigger the workflow: `gh workflow run demo-pages.yml` (or via the Actions tab).
+3. The demo appears at `https://<owner>.github.io/<repo>/`.
 
 Runs the three GNSS Auditor helpers client-side against synthetic inputs:
 

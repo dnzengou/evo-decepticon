@@ -62,11 +62,13 @@ Skip the Docker setup — run autonomous red-team engagements right from your br
 
 Try the **GNSS Auditor** in your browser. Runs the TESLA-PQC + walk-off helpers client-side against synthetic inputs. Offline-safe (CSP: `default-src 'none'`).
 
-<a href="https://dnzengou.github.io/evo-decepticon/">
-  <img src="https://img.shields.io/badge/%E2%96%B6%20Try%20the%20GNSS%20Auditor%20demo-dnzengou.github.io-22d3ee?style=for-the-badge" alt="Try the GNSS Auditor demo">
-</a>
+```bash
+git clone https://github.com/dnzengou/evo-decepticon.git
+open evo-decepticon/demo/gnss_auditor_ui.html   # or: xdg-open / start
+```
 
-<sub>Prefer a CLI? `python demo/gnss_pqc_demo.py` — 3 HIGH findings in < 1 s, zero deps.</sub>
+<sub>Prefer a CLI? `python demo/gnss_pqc_demo.py` — 3 HIGH findings in < 1 s, zero deps.<br/>
+Live URL: once GitHub Pages is enabled on this repo, run the [`demo-pages`](.github/workflows/demo-pages.yml) workflow and the demo is served at <code>&lt;owner&gt;.github.io/&lt;repo&gt;/</code>.</sub>
 
 </div>
 
