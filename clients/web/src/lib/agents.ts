@@ -137,6 +137,13 @@ export const AGENT_DISPLAY_CONFIG: Record<string, AgentDisplayMeta> = {
     role: "Domain Specialist",
     color: "#ec4899",
   },
+  gnss_auditor: {
+    name: "GNSS Auditor",
+    description:
+      "GNSS/PNT auth — TESLA/OSNMA/HAS PQC audit, jam/spoof resilience (TTLOF)",
+    role: "Domain Specialist",
+    color: "#22d3ee",
+  },
   detector: {
     name: "Detector",
     description: "Vulnerability detection — pattern matching, triage",
