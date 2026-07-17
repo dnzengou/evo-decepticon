@@ -1,7 +1,7 @@
 # Decepticon — Blueprint
 
-**Version:** 1.0.6
-**Date:** 2026-07-14
+**Version:** 1.0.7
+**Date:** 2026-07-18
 **Live URL:** [decepticon.red](https://decepticon.red)
 **Docs:** [docs.decepticon.red](https://docs.decepticon.red)
 **Repo:** [PurpleAILAB/Decepticon](https://github.com/PurpleAILAB/Decepticon)
@@ -68,10 +68,20 @@ engagement.
 | VS Code / Cursor MCP | 🔲 | planned — expose GNSS auditor + KG tools |
 | Homebrew formula | 🔲 | planned |
 | Community Skill Marketplace | 🔲 | planned — third-party skills via manifest |
+| GNSS Auditor demo (static) | ✅ v1.0.7 | GitHub Pages — [dnzengou.github.io/evo-decepticon](https://dnzengou.github.io/evo-decepticon/) |
 
 ---
 
 ## Roadmap
+
+### v1.0.7 (2026-07-18) — Demo enablement (DEMO-BEFORE-INSTALL)
+
+- ✅ `demo/gnss_auditor_ui.html` interactive UI landed on `main` (was stranded on feat branch)
+- ✅ `demo/index.html` redirect landing (Pages root → GNSS Auditor demo)
+- ✅ `demo/README.md` explains both demos (browser UI + CLI)
+- ✅ README ▶ Try the GNSS Auditor demo CTA above Install (DEMO-BEFORE-INSTALL)
+- ✅ `.github/workflows/demo-pages.yml` publishes `demo/` subtree to GitHub Pages on push
+- ✅ `docs/user-manual.md` landed on `main` (was stranded on feat branch)
 
 ### v1.0.6 (2026-07-14) — GNSS + EvoMetaClaw cut
 
@@ -140,6 +150,13 @@ tests/unit/core/test_evo_metaclaw.py                                           N
 ---
 
 ## Changelog
+
+### v1.0.7 — 2026-07-18
+- New: `demo/index.html` (redirect landing) + `demo/README.md`
+- New: `.github/workflows/demo-pages.yml` — static Pages deploy of `demo/` subtree
+- New: README CTA "▶ Try the GNSS Auditor demo" (above Install)
+- Ship: `demo/gnss_auditor_ui.html` + `docs/user-manual.md` cherry-picked from `feat/gnss-auditor-evo-metaclaw` (previously merged PRs #1 and #2 dropped them)
+- Distribution: new "GNSS Auditor demo (static)" channel via GitHub Pages
 
 ### v1.0.6 — 2026-07-14
 - New: EvoMetaClaw core + engagement-loop signal capture (moat)
