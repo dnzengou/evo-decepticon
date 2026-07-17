@@ -132,6 +132,25 @@ But more importantly: it operates under the discipline that separates red teamer
 
 ---
 
+## What's new in v1.0.6 — EvoMetaClaw + GNSS Auditor
+
+Two moats stacked in one cut.
+
+**🧬 [EvoMetaClaw flywheel](docs/evo-metaclaw.md)** — every engagement writes an append-only trajectory log (`signals.jsonl`). A `QGate` + `GRPOBuffer` + `CircuitBreaker` + `GenomeStore` retrain the skill-selection policy on _your_ engagement data, inside _your_ tenancy. Public code is the price of entry; the trained gate is the moat. Stdlib-only, ~350 LoC, exception-swallowed at every hot path — the flywheel never breaks an active op.
+
+**🛰️ [GNSS Auditor](docs/agents.md#gnss-auditor)** — TESLA / OSNMA / Galileo HAS PQC audits (Grover-gap scoring, DSM-PKR quantum readiness) + jamming / spoofing resilience (TTLOF, walk-off velocity). Physical-layer TX gated behind `plan/roe.json:machine_enforcement.rf.gnss.authorized` — record-and-review by default, chamber-only when authorized, never open-air. Ships with two skills (`tesla-pqc-audit`, `signal-disruption`) and an RF safety pre-flight checklist.
+
+**Try it in 30 seconds:**
+```bash
+python demo/gnss_pqc_demo.py       # 3 findings, 3 HIGH severity, < 1 s
+```
+
+**Try it in the browser** (no install, offline-safe): open [`demo/gnss_auditor_ui.html`](demo/gnss_auditor_ui.html) — a self-contained page that runs the three helpers client-side. No network, no eval, no state persisted.
+
+→ **[EvoMetaClaw moat writeup](docs/evo-metaclaw.md)** · **[User manual](docs/user-manual.md)** · **[BLUEPRINT](BLUEPRINT.md)**
+
+---
+
 ## Why Decepticon?
 
 **Real kill chains, not checkbox scans.** Decepticon reads an OPPLAN and pursues objectives through whatever path opens up — pivoting, adapting, chaining techniques.
@@ -158,9 +177,9 @@ Two-network design. The **always-on** management plane (LiteLLM, PostgreSQL, Ski
 
 ## Agents
 
-16 specialist agents organized by kill chain phase, with a fresh context window per objective — no accumulated noise.
+17 specialist agents organized by kill chain phase, with a fresh context window per objective — no accumulated noise.
 
-Orchestration · Reconnaissance · Exploitation · Post-Exploitation · Vulnerability Research · Domain Specialists (AD, Cloud, Smart Contracts, Reversing, Analyst).
+Orchestration · Reconnaissance · Exploitation · Post-Exploitation · Vulnerability Research · Domain Specialists (AD, Cloud, Smart Contracts, Reversing, Analyst, **GNSS Auditor** _new in v1.0.6_).
 
 → **[Full agent roster and middleware stack](docs/agents.md)**
 
@@ -187,6 +206,10 @@ Configure via `decepticon onboard`. → **[Full model reference & fallback examp
 
 | Topic | Doc |
 |-------|-----|
+| **User manual** (install → configure → run → read findings) | [User Manual](docs/user-manual.md) |
+| **EvoMetaClaw** — the skill-library flywheel (moat) | [EvoMetaClaw](docs/evo-metaclaw.md) |
+| **GNSS Auditor demo** — interactive browser UI (offline-safe) | [demo/gnss_auditor_ui.html](demo/gnss_auditor_ui.html) |
+| **v1.0.6 blueprint** — source of truth for the cut | [BLUEPRINT.md](BLUEPRINT.md) |
 | Installation and first engagement | [Getting Started](docs/getting-started.md) |
 | Complete setup, OAuth, providers, dashboard | [Setup Guide](docs/setup-guide.md) |
 | All CLI commands and keyboard shortcuts | [CLI Reference](docs/cli-reference.md) |

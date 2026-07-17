@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<!--
+  Content-Security-Policy: hardened for offline-safety.
+   - default-src 'none': block everything by default
+   - script-src 'self' 'unsafe-inline': allow only the inline JS below
+     (no external scripts, no eval, no data:)
+   - style-src 'self' 'unsafe-inline': inline CSS only
+   - connect-src 'none' / img-src 'none': no network, no images loaded
+  The page is functional with the file:// protocol and requires no server.
+-->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'none';
+  script-src 'self' 'unsafe-inline';
+  style-src 'self' 'unsafe-inline';
+  connect-src 'none';
+  img-src 'none';
+  font-src 'none';
+  frame-src 'none';
+  object-src 'none';
+  base-uri 'none';
+  form-action 'none';
+">
+<title>Decepticon GNSS Auditor — Interactive Demo</title>
+<style>
+  :root {
+    --bg: #0b1220;
+    --panel: #111b2f;
+    --panel-2: #17223a;
+    --border: #223151;
+    --text: #e5edf7;
+    --muted: #90a0bd;
+    --accent: #22d3ee;
+    --accent-2: #7dd3fc;
+    --ok: #86efac;
+    --info: #a5b4fc;
+    --low: #fbbf24;
+    --medium: #f97316;
+    --high: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header {
+    padding: 24px 32px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, #0e1830 0%, #0b1220 100%);
+  }
+  header h1 { margin: 0; font-size: 22px; letter-spacing: .3px; }
+  header h1 .dot { color: var(--accent); }
+  header p { margin: 6px 0 0; color: var(--muted); font-size: 14px; max-width: 780px; }
+  main { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; padding: 24px 32px; }
+  @media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px 20px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .panel h2 {
+    margin: 0; font-size: 15px; letter-spacing: .4px;
+    color: var(--accent-2); text-transform: uppercase; font-weight: 600;
+  }
+  .panel p.desc { margin: 0; font-size: 13px; color: var(--muted); }
+  label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 4px; }
+  label input, label select {
+    padding: 8px 10px;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-family: ui-monospace, "Cascadia Mono", Menlo, monospace;
+    font-size: 13px;
+    outline: none;
+  }
+  label input:focus, label select:focus { border-color: var(--accent); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .btn {
+    margin-top: 6px;
+    padding: 10px 14px;
+    background: var(--accent);
+    color: #001018;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 13px;
+    letter-spacing: .3px;
+  }
+  .btn:hover { filter: brightness(1.05); }
+  .btn:active { transform: translateY(1px); }
+  .verdict { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--panel-2); }
+  .sev { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px;
+    font-weight: 700; letter-spacing: .3px; margin-right: 8px; }
+  .sev.INFO   { background: rgba(165,180,252,.15); color: var(--info); }
+  .sev.LOW    { background: rgba(251,191,36,.15); color: var(--low); }
+  .sev.MEDIUM { background: rgba(249,115,22,.15); color: var(--medium); }
+  .sev.HIGH   { background: rgba(239,68,68,.18);  color: var(--high); }
+  .sev.OK     { background: rgba(134,239,172,.15); color: var(--ok); }
+  .verdict h3 { margin: 0 0 6px; font-size: 13px; color: var(--text); }
+  .verdict pre {
+    margin: 8px 0 0;
+    max-height: 200px;
+    overflow: auto;
+    background: #08111f;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 11.5px;
+    color: var(--muted);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  footer { padding: 20px 32px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--border); }
+  footer a { color: var(--accent-2); }
+  .safety-banner {
+    margin: 16px 32px 0;
+    padding: 12px 16px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    border-radius: 8px;
+    color: var(--muted);
+    font-size: 12.5px;
+  }
+  .safety-banner strong { color: var(--accent-2); }
+  .kv { font-size: 12px; color: var(--muted); }
+  .kv b { color: var(--text); font-weight: 500; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Decepticon GNSS Auditor <span class="dot">·</span> Interactive demo</h1>
+  <p>
+    Three offline calculators mirroring the production Python helpers.
+    All math runs locally in this page — <em>no network calls, no data leaves your browser</em>.
+    Same severity model, same PQC thresholds, same authorization posture.
+  </p>
+</header>
+
+<div class="safety-banner">
+  <strong>Safe by design.</strong> This page cannot transmit RF. It cannot upload results.
+  Its authorization gate is a <em>demonstration</em> — the production
+  <code>walk_spoof.py --tx</code> reads <code>plan/roe.json</code> and refuses without
+  a fixture-matched authorization block.
+</div>
+
+<main>
+
+  <!-- Panel 1: MAC + tag Grover scorer -->
+  <section class="panel" aria-label="MAC Grover scorer">
+    <h2>1 · TESLA / OSNMA MAC Grover gap</h2>
+    <p class="desc">Score a MAC slot against a post-quantum brute force. Half the classical bits under Grover.</p>
+    <div class="row">
+      <label>Hash primitive
+        <select id="mac_hash">
+          <option>HMAC-SHA-256</option>
+          <option>HMAC-SHA-384</option>
+          <option>HMAC-SHA-512</option>
+          <option>SHA-256</option>
+          <option>SHA-384</option>
+          <option>SHA3-256</option>
+        </select>
+      </label>
+      <label>Tag truncation (bits)
+        <input id="mac_tag" type="number" min="8" max="512" step="1" value="40">
+      </label>
+    </div>
+    <div class="row">
+      <label>Key size (bits, optional)
+        <input id="mac_key" type="number" min="0" max="512" step="1" value="128">
+      </label>
+      <label>PQ target (bits)
+        <input id="mac_target" type="number" min="32" max="256" step="1" value="128">
+      </label>
+    </div>
+    <button class="btn" id="mac_run">Score</button>
+    <div class="verdict" id="mac_out" hidden></div>
+  </section>
+
+  <!-- Panel 2: Root sig audit -->
+  <section class="panel" aria-label="Root signature audit">
+    <h2>2 · DSM-PKR root signature</h2>
+    <p class="desc">Quantum readiness for the root-of-trust. RSA/ECDSA are 0 pq-bits under Shor.</p>
+    <div class="row">
+      <label>Algorithm
+        <select id="sig_alg">
+          <option>rsa</option>
+          <option>ecdsa</option>
+          <option>ml-dsa-44</option>
+          <option>ml-dsa-65</option>
+          <option>ml-dsa-87</option>
+          <option>slh-dsa-192s</option>
+          <option>falcon-512</option>
+        </select>
+      </label>
+      <label>Key bits (RSA modulus / EC curve)
+        <input id="sig_bits" type="number" min="128" max="16384" step="1" value="2048">
+      </label>
+    </div>
+    <div class="row">
+      <label>Rotation cadence (days)
+        <input id="sig_rot" type="number" min="30" max="3650" step="1" value="730">
+      </label>
+      <label>SIS-ICD page budget (bytes)
+        <input id="sig_page" type="number" min="128" max="16384" step="1" value="4096">
+      </label>
+    </div>
+    <button class="btn" id="sig_run">Audit</button>
+    <div class="verdict" id="sig_out" hidden></div>
+  </section>
+
+  <!-- Panel 3: Walk-off scenario -->
+  <section class="panel" aria-label="Walk-off simulator">
+    <h2>3 · Receiver walk-off resilience</h2>
+    <p class="desc">Dry-run only — computes TTLOF from receiver-advertised tolerance. Never transmits.</p>
+    <div class="row">
+      <label>Receiver
+        <select id="rx_model">
+          <option>ublox-f9p</option>
+          <option>septentrio-mosaic-x5</option>
+          <option>trimble-bd992</option>
+          <option>novatel-oem7</option>
+          <option>generic-mass-market</option>
+        </select>
+      </label>
+      <label>OSNMA verify capable
+        <select id="rx_osnma">
+          <option value="false">no</option>
+          <option value="true">yes</option>
+        </select>
+      </label>
+    </div>
+    <div class="row">
+      <label>Walk velocity (m/s)
+        <input id="rx_walk" type="number" min="0" max="200" step="0.1" value="15.0">
+      </label>
+      <label>Duration (s)
+        <input id="rx_dur" type="number" min="1" max="3600" step="1" value="60">
+      </label>
+    </div>
+    <button class="btn" id="rx_run">Simulate (dry-run)</button>
+    <div class="verdict" id="rx_out" hidden></div>
+  </section>
+
+</main>
+
+<footer>
+  Source: <code>demo/gnss_auditor_ui.html</code> ·
+  Mirrors <code>mac_grover_score.py</code>, <code>root_sig_audit.py</code>,
+  <code>walk_spoof.py</code> in <code>packages/decepticon/decepticon/skills/standard/gnss/</code> ·
+  Part of Decepticon v1.0.6 (EvoMetaClaw + GNSS Auditor).
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  // ── Guards ────────────────────────────────────────────────────────
+  // Client-side safety: reject anything not a positive finite integer/float
+  // in the expected range. Never eval, never trust selects beyond their
+  // hardcoded option lists.
+  function posInt(v, min, max, dflt) {
+    var n = parseInt(v, 10);
+    if (!isFinite(n) || n < min || n > max) return dflt;
+    return n;
+  }
+  function posFloat(v, min, max, dflt) {
+    var n = parseFloat(v);
+    if (!isFinite(n) || n < min || n > max) return dflt;
+    return n;
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];
+    });
+  }
+
+  // ── Panel 1: mac_grover_score.py port ─────────────────────────────
+  var HASH_BITS = {
+    "HMAC-SHA-256": 256, "HMAC-SHA-384": 384, "HMAC-SHA-512": 512,
+    "SHA-256": 256, "SHA-384": 384, "SHA3-256": 256
+  };
+  function scoreMac(hashName, tagBits, keyBits, targetBits) {
+    var hashBits = HASH_BITS[hashName] || 0;
+    var classical = Math.min(hashBits, tagBits);
+    if (keyBits > 0) classical = Math.min(classical, keyBits);
+    var pqBits = Math.floor(classical / 2);
+    var severity, text;
+    if (pqBits >= targetBits) {
+      severity = "INFO";
+      text = "Slot meets " + targetBits + "-bit post-quantum target.";
+    } else if (pqBits >= Math.floor(targetBits * 3 / 4)) {
+      severity = "LOW";
+      text = "Slot below Cat-1 target (" + pqBits + " < " + targetBits +
+        " pq-bits). Migrate on next spec revision.";
+    } else if (pqBits >= Math.floor(targetBits / 2)) {
+      severity = "MEDIUM";
+      text = "Slot vulnerable to CRQC by 2035 (" + pqBits +
+        " pq-bits). Rotate root within 2 years.";
+    } else {
+      severity = "HIGH";
+      text = "Slot forgeable pre-CRQC (" + pqBits +
+        " pq-bits). Immediate migration required.";
+    }
+    return {
+      hash: hashName,
+      hash_output_bits: hashBits,
+      mac_truncation_bits: tagBits,
+      key_bits: keyBits || null,
+      classical_forgery_bits: classical,
+      pq_effective_bits: pqBits,
+      target_pq_bits: targetBits,
+      severity: severity,
+      finding: text
+    };
+  }
+
+  // ── Panel 2: root_sig_audit.py port ───────────────────────────────
+  var CLASSICAL_TABLE = {
+    "rsa":   {1024: 80, 2048: 112, 3072: 128, 4096: 152, 7680: 192, 15360: 256},
+    "ecdsa": {192: 96, 224: 112, 256: 128, 384: 192, 521: 256}
+  };
+  var PQC_TABLE = {
+    "ml-dsa-44":   [128, "Cat 2"], "ml-dsa-65":   [192, "Cat 3"], "ml-dsa-87":   [256, "Cat 5"],
+    "slh-dsa-128s":[128, "Cat 1"], "slh-dsa-192s":[192, "Cat 3"], "slh-dsa-256s":[256, "Cat 5"],
+    "falcon-512":  [128, "Cat 1"], "falcon-1024": [256, "Cat 5"]
+  };
+  var ASSUMED_CRQC_YEAR = 2035;
+  var AUDIT_YEAR = 2026;
+
+  function classicalBits(alg, bits) {
+    var t = CLASSICAL_TABLE[alg];
+    if (!t) return 0;
+    var known = Object.keys(t).map(Number).filter(function (k) { return k <= bits; }).sort(function (a, b) { return a - b; });
+    if (!known.length) return 0;
+    return t[known[known.length - 1]];
+  }
+  function recommendMigration(pageBytes) {
+    if (pageBytes >= 4096) {
+      return { target: "ML-DSA-65", pq_bits: 192, sig_bytes: 3293, pk_bytes: 1952,
+        rationale: "Cat-3, 192 pq-bits, fits SIS-ICD pages ≥ 4 KB." };
+    }
+    if (pageBytes >= 900) {
+      return { target: "Falcon-512", pq_bits: 128, sig_bytes: 666, pk_bytes: 897,
+        rationale: "Cat-1, 128 pq-bits, smallest PQ sig fitting sub-1 KB pages." };
+    }
+    return { target: "aggregated-ML-DSA-44", pq_bits: 128, sig_bytes: 2420, pk_bytes: 1312,
+      rationale: "Sub-900-byte pages force multi-frame aggregation." };
+  }
+  function auditRoot(alg, bits, rotationDays, pageBytes) {
+    var pqcEntry = PQC_TABLE[alg];
+    if (pqcEntry) {
+      var pqBits = pqcEntry[0], cat = pqcEntry[1];
+      return {
+        alg: alg, key_bits: bits, classical_bits: pqBits, pq_bits: pqBits,
+        severity: pqBits >= 128 ? "INFO" : "LOW",
+        finding: pqBits >= 128
+          ? ("Root is PQC-native (" + alg + ", NIST " + cat + ", " + pqBits + " pq-bits).")
+          : ("Root is PQC but below Cat-1 target (" + pqBits + " < 128 pq-bits)."),
+        migration: null,
+        rotation: { urgency: "none", years_slack: ASSUMED_CRQC_YEAR - AUDIT_YEAR,
+          notes: "PQC-adequate — rotate on normal cadence." }
+      };
+    }
+    if (CLASSICAL_TABLE[alg]) {
+      var cbits = classicalBits(alg, bits);
+      var yearsUntilCrqc = Math.max(0, ASSUMED_CRQC_YEAR - AUDIT_YEAR);
+      var residualYears = rotationDays / 365.0;
+      var urgency, slack, notes;
+      if (residualYears > yearsUntilCrqc) {
+        urgency = "immediate";
+        slack = +(yearsUntilCrqc - residualYears).toFixed(2);
+        notes = "Current root will outlive CRQC arrival (~" + ASSUMED_CRQC_YEAR +
+          ") — key lifetime " + residualYears.toFixed(1) + " y > " + yearsUntilCrqc +
+          " y remaining. Rotate to PQC now.";
+      } else {
+        urgency = "planned";
+        slack = +(yearsUntilCrqc - residualYears).toFixed(2);
+        notes = "Rotation (" + residualYears.toFixed(1) + " y) precedes CRQC (" +
+          yearsUntilCrqc + " y). Plan PQC migration before next cycle.";
+      }
+      return {
+        alg: alg, key_bits: bits, classical_bits: cbits, pq_bits: 0,
+        severity: "HIGH",
+        finding: "Root is Shor-vulnerable (" + alg.toUpperCase() + "-" + bits +
+          "). 0 pq-bits under a CRQC. Classical strength ~" + cbits + " bits.",
+        migration: recommendMigration(pageBytes),
+        rotation: { urgency: urgency, years_slack: slack, notes: notes }
+      };
+    }
+    return { alg: alg, severity: "ERROR", finding: "Unknown signature algorithm." };
+  }
+
+  // ── Panel 3: walk_spoof.py port (dry-run only) ────────────────────
+  var RX_ENVELOPES = {
+    "ublox-f9p": { tol: 3.0, raim_m: 15.0 },
+    "septentrio-mosaic-x5": { tol: 1.5, raim_m: 8.0 },
+    "trimble-bd992": { tol: 2.0, raim_m: 10.0 },
+    "novatel-oem7": { tol: 2.5, raim_m: 12.0 },
+    "generic-mass-market": { tol: 10.0, raim_m: 30.0 }
+  };
+  function evaluateWalk(model, walkMps, durS, osnma) {
+    var env = RX_ENVELOPES[model] || RX_ENVELOPES["generic-mass-market"];
+    var ttlofS = walkMps > 0 ? +(env.raim_m / walkMps + 5.0).toFixed(2) : null;
+    var overTol = walkMps > env.tol;
+    var severity, finding, osnmaVerdict;
+    if (osnma) {
+      osnmaVerdict = "verify_fail";
+      severity = overTol ? "MEDIUM" : "LOW";
+      finding = "OSNMA-capable receiver should detect verdict mismatch. Confirm the receiver honors OSNMA fail in configuration.";
+    } else if (overTol) {
+      severity = "HIGH";
+      finding = "Walk-off velocity " + walkMps + " m/s exceeds receiver-advertised tolerance " + env.tol + " m/s. Silent acceptance is a HIGH finding.";
+      osnmaVerdict = "no_auth";
+    } else {
+      severity = "LOW";
+      finding = "Walk-off " + walkMps + " m/s within tolerance " + env.tol + " m/s. Receiver expected to alarm within RAIM decision boundary.";
+      osnmaVerdict = "no_auth";
+    }
+    return {
+      receiver_model: model,
+      walk_mps: walkMps,
+      duration_s: durS,
+      walk_off_tolerance_mps: env.tol,
+      raim_threshold_m: env.raim_m,
+      ttlof_expected_s: ttlofS,
+      raim_alarm_expected: walkMps > 0,
+      osnma_verdict_expected: osnmaVerdict,
+      severity: severity,
+      finding: finding
+    };
+  }
+
+  // ── Render helpers ────────────────────────────────────────────────
+  function render(elId, verdict, title) {
+    var el = document.getElementById(elId);
+    var sev = verdict.severity || "INFO";
+    var text = verdict.finding || "(no finding)";
+    el.hidden = false;
+    el.innerHTML =
+      '<h3><span class="sev ' + esc(sev) + '">' + esc(sev) + '</span>' + esc(title) + '</h3>' +
+      '<div class="kv">' + esc(text) + '</div>' +
+      '<pre>' + esc(JSON.stringify(verdict, null, 2)) + '</pre>';
+  }
+
+  // ── Wire the three buttons. Read-only inputs guarded by pos* helpers ─
+  document.getElementById("mac_run").addEventListener("click", function () {
+    var hash = document.getElementById("mac_hash").value;
+    // Whitelist: reject anything not in HASH_BITS.
+    if (!HASH_BITS[hash]) hash = "HMAC-SHA-256";
+    var tag = posInt(document.getElementById("mac_tag").value, 8, 512, 40);
+    var key = posInt(document.getElementById("mac_key").value, 0, 512, 0);
+    var target = posInt(document.getElementById("mac_target").value, 32, 256, 128);
+    render("mac_out", scoreMac(hash, tag, key, target), " Grover-gap verdict");
+  });
+  document.getElementById("sig_run").addEventListener("click", function () {
+    var alg = document.getElementById("sig_alg").value;
+    if (!CLASSICAL_TABLE[alg] && !PQC_TABLE[alg]) alg = "rsa";
+    var bits = posInt(document.getElementById("sig_bits").value, 128, 16384, 2048);
+    var rot = posInt(document.getElementById("sig_rot").value, 30, 3650, 730);
+    var page = posInt(document.getElementById("sig_page").value, 128, 16384, 4096);
+    render("sig_out", auditRoot(alg, bits, rot, page), " Root-signature verdict");
+  });
+  document.getElementById("rx_run").addEventListener("click", function () {
+    var model = document.getElementById("rx_model").value;
+    if (!RX_ENVELOPES[model]) model = "generic-mass-market";
+    var walk = posFloat(document.getElementById("rx_walk").value, 0, 200, 1.0);
+    var dur = posInt(document.getElementById("rx_dur").value, 1, 3600, 60);
+    var osnma = document.getElementById("rx_osnma").value === "true";
+    render("rx_out", evaluateWalk(model, walk, dur, osnma), " Walk-off verdict");
+  });
+
+  // Preload sensible defaults on first paint so the demo is one-click.
+  document.getElementById("mac_run").click();
+  document.getElementById("sig_run").click();
+  document.getElementById("rx_run").click();
+})();
+</script>
+</body>
+</html>
