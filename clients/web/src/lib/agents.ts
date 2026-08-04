@@ -144,6 +144,13 @@ export const AGENT_DISPLAY_CONFIG: Record<string, AgentDisplayMeta> = {
     role: "Domain Specialist",
     color: "#22d3ee",
   },
+  crypto_hw_auditor: {
+    name: "Crypto HW Auditor",
+    description:
+      "Hardware wallet / HSM / TPM audit — RNG entropy, TRNG→PRNG fallback, BIP39 seed strength",
+    role: "Domain Specialist",
+    color: "#f472b6",
+  },
   detector: {
     name: "Detector",
     description: "Vulnerability detection — pattern matching, triage",

@@ -1,7 +1,7 @@
 # Decepticon — Blueprint
 
-**Version:** 1.0.7
-**Date:** 2026-07-18
+**Version:** 1.0.8
+**Date:** 2026-08-04
 **Live URL:** [decepticon.red](https://decepticon.red)
 **Docs:** [docs.decepticon.red](https://docs.decepticon.red)
 **Repo:** [PurpleAILAB/Decepticon](https://github.com/PurpleAILAB/Decepticon)
@@ -40,7 +40,7 @@ engagement.
 
 ---
 
-## Agents (17 total)
+## Agents (18 total)
 
 | Phase | Agent | Skill sources |
 |-------|-------|---------------|
@@ -49,9 +49,10 @@ engagement.
 | Exploitation | exploit, exploiter, detector, verifier, patcher | `skills/exploit/`, `skills/vulnresearch/` |
 | Post-Exploitation | postexploit | `skills/post-exploit/` |
 | Defense | defender | Offensive Vaccine loop |
-| Domain Specialists | ad_operator, cloud_hunter, contract_auditor, reverser, analyst, **gnss_auditor** | see skill catalog |
+| Domain Specialists | ad_operator, cloud_hunter, contract_auditor, reverser, analyst, **gnss_auditor**, **crypto_hw_auditor** | see skill catalog |
 
-`gnss_auditor` new in v1.0.6 — TESLA/OSNMA/HAS PQC audit + jamming/spoofing resilience.
+- `gnss_auditor` new in v1.0.6 — TESLA/OSNMA/HAS PQC audit + jamming/spoofing resilience.
+- `crypto_hw_auditor` new in v1.0.8 — Coldcard-class RNG audit (TRNG→PRNG silent-fallback detection) + BIP39 seed strength.
 
 ---
 
@@ -74,6 +75,23 @@ engagement.
 ---
 
 ## Roadmap
+
+### v1.0.8 (2026-08-04) — Crypto HW Auditor (Coldcard-class RNG response)
+
+Response capability for the 2026 Coldcard-class incident (TRNG silently
+falls back to a small-state software PRNG after a firmware regression).
+Enables Decepticon to react as a Red-Team / ethical-hacker member the
+way Block's postmortem did: score the RNG output, recommend
+passphrase-bit deltas before device replacement, and ship a
+Block-shaped postmortem.
+
+- ✅ New specialist `crypto_hw_auditor` (`packages/decepticon/decepticon/agents/standard/crypto_hw_auditor.py`) — mirrors the `gnss_auditor` factory pattern; SubAgentSpec priority 87 under `decepticon`.
+- ✅ Agent prompt (`packages/decepticon/decepticon/agents/prompts/standard/crypto_hw_auditor.md`) — 4 hunting lanes (RNG audit, seed strength, firmware regression, post-incident writeup); consent + no-mnemonic-persistence rules.
+- ✅ Skill category `skills/standard/crypto-hw/` with suite index + rng-entropy-audit sub-skill.
+- ✅ Helper `rng_entropy_score.py` (~250 loc, stdlib-only) — min-entropy, monobit sigma, longest run, repeated-block ratio, catastrophic-block detector, BIP39 seed scorer.
+- ✅ Postmortem template (`references/hardware-wallet-postmortem-template.md`) structured after Block's Coldcard writeup.
+- ✅ Role registered in `SLOTS_PER_ROLE`; `langgraph.json` now serves 21 graphs; web AGENTS registry gained `crypto_hw_auditor` (pink tile).
+- ✅ 30-second commercial demo (`demo/wallet_rng_demo.py`) — 3 scenarios (Coldcard-shaped PRNG → HIGH, healthy TRNG → INFO, 24-word seed + 32 passphrase bits → INFO).
 
 ### v1.0.7 (2026-07-18) — Demo enablement (DEMO-BEFORE-INSTALL)
 
@@ -151,6 +169,14 @@ tests/unit/core/test_evo_metaclaw.py                                           N
 ---
 
 ## Changelog
+
+### v1.0.8 — 2026-08-04
+- New: `crypto_hw_auditor` specialist agent + prompt (Coldcard-class RNG + BIP39 seed audit)
+- New: `skills/standard/crypto-hw/` suite (index + rng-entropy-audit + postmortem template)
+- New: `rng_entropy_score.py` helper — stdlib-only entropy + seed scoring
+- New: `demo/wallet_rng_demo.py` — 30-second demo, 3 scenarios (HIGH/INFO/INFO)
+- Reg: role added to `SLOTS_PER_ROLE`, `langgraph.json` (21 graphs), web AGENTS registry
+- Response: Decepticon can now react to a Coldcard-class disclosure the way Block's postmortem did — score, recommend passphrase-bit delta, write the postmortem
 
 ### v1.0.7 — 2026-07-18
 - New: `demo/index.html` (redirect landing) + `demo/README.md`

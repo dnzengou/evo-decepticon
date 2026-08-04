@@ -156,6 +156,8 @@ Two moats stacked in one cut.
 
 **🛰️ [GNSS Auditor](docs/agents.md#gnss-auditor)** — TESLA / OSNMA / Galileo HAS PQC audits (Grover-gap scoring, DSM-PKR quantum readiness) + jamming / spoofing resilience (TTLOF, walk-off velocity). Physical-layer TX gated behind `plan/roe.json:machine_enforcement.rf.gnss.authorized` — record-and-review by default, chamber-only when authorized, never open-air. Ships with two skills (`tesla-pqc-audit`, `signal-disruption`) and an RF safety pre-flight checklist.
 
+**🔐 Crypto HW Auditor** _new in v1.0.8_ — response capability for the 2026 Coldcard-class incident (TRNG silently falls back to a small-state PRNG after a firmware regression). Scores RNG samples (min-entropy, monobit, repeated-block ratio, catastrophic-block detector) and BIP39 seed strength (word count + passphrase bits → post-Grover pq-bits). Recommends passphrase-bit deltas BEFORE device replacement and ships with a Block-shaped postmortem template. Consent-gated on `plan/roe.json:machine_enforcement.crypto_hw.authorized`. Try it: `python demo/wallet_rng_demo.py`.
+
 **Try it in 30 seconds:**
 ```bash
 python demo/gnss_pqc_demo.py       # 3 findings, 3 HIGH severity, < 1 s
