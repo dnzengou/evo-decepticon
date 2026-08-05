@@ -2,22 +2,102 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'">
-<meta http-equiv="refresh" content="0; url=gnss_auditor_ui.html">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Decepticon Demo</title>
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'none';
+  style-src 'self' 'unsafe-inline';
+  img-src 'none';
+  connect-src 'none';
+">
+<title>Decepticon demos</title>
 <style>
-  body {
-    margin: 0; padding: 48px 24px;
-    background: #0b1220; color: #e5edf7;
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    text-align: center;
+  :root {
+    --bg: #0b1220;
+    --panel: #111b2f;
+    --panel-2: #17223a;
+    --border: #223151;
+    --text: #e5edf7;
+    --muted: #90a0bd;
+    --accent-gnss: #22d3ee;
+    --accent-hw:   #f472b6;
   }
-  a { color: #22d3ee; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { padding: 40px 32px 20px; text-align: center; }
+  header h1 { margin: 0; font-size: 26px; letter-spacing: .3px; }
+  header p { margin: 8px auto 0; color: var(--muted); font-size: 14px; max-width: 640px; }
+  main {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 20px; padding: 20px 32px 40px;
+    max-width: 1080px; margin: 0 auto;
+  }
+  @media (max-width: 780px) { main { grid-template-columns: 1fr; } }
+  .card {
+    display: flex; flex-direction: column;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px 24px 24px;
+    text-decoration: none; color: var(--text);
+    transition: border-color .15s, transform .15s;
+  }
+  .card:hover { border-color: var(--panel-2); transform: translateY(-1px); }
+  .card h2 { margin: 0; font-size: 17px; letter-spacing: .3px; display: flex; align-items: center; gap: 8px; }
+  .card h2 .tag { font-size: 10px; padding: 2px 8px; border-radius: 3px;
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); font-weight: 500; }
+  .card.gnss h2 { color: var(--accent-gnss); }
+  .card.hw   h2 { color: var(--accent-hw); }
+  .card p.desc { margin: 10px 0 0; color: var(--muted); font-size: 13.5px; line-height: 1.55; }
+  .card .cta { margin-top: 16px; font-size: 13px; color: var(--text);
+    padding: 8px 12px; background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 6px; display: inline-block; align-self: flex-start; }
+  .card.gnss .cta { color: var(--accent-gnss); }
+  .card.hw   .cta { color: var(--accent-hw); }
+  footer { padding: 12px 32px 32px; color: var(--muted); font-size: 12px;
+    max-width: 900px; margin: 0 auto; text-align: center; }
+  footer code { background: var(--panel-2); padding: 1px 5px; border-radius: 3px;
+    border: 1px solid var(--border); font-size: 11px; }
 </style>
 </head>
 <body>
-  <p>Loading the Decepticon GNSS Auditor demo…</p>
-  <p><a href="gnss_auditor_ui.html">Continue &rarr;</a></p>
+<header>
+  <h1>Decepticon &mdash; interactive demos</h1>
+  <p>
+    Zero-install, offline-safe browser demos of the Decepticon specialist
+    auditors. Each page runs its checks entirely client-side against
+    synthetic inputs (CSP <code>default-src 'none'</code>, no network).
+  </p>
+</header>
+<main>
+
+  <a class="card gnss" href="gnss_auditor_ui.html">
+    <h2>&#127760; GNSS Auditor <span class="tag">v1.0.6</span></h2>
+    <p class="desc">
+      TESLA / OSNMA / Galileo HAS post-quantum signature audits + receiver
+      resilience under authorized jam / spoof. Runs three helpers: Grover-gap
+      MAC verdict, root-signature quantum readiness, walk-off velocity vs
+      receiver envelope.
+    </p>
+    <span class="cta">Open GNSS Auditor demo &rarr;</span>
+  </a>
+
+  <a class="card hw" href="wallet_auditor_ui.html">
+    <h2>&#128272; Crypto HW Auditor <span class="tag">v1.0.9</span></h2>
+    <p class="desc">
+      Response capability for the 2026 Coldcard incident (70 M BTC lost in
+      41 minutes from 1,196 wallets after a TRNG&rarr;PRNG silent-fallback
+      firmware regression). Score RNG samples, check BIP39 seed strength,
+      cross-check firmware version against published vulnerable ranges.
+    </p>
+    <span class="cta">Open Crypto HW Auditor demo &rarr;</span>
+  </a>
+
+</main>
+<footer>
+  Prefer a CLI demo? &nbsp;<code>python demo/gnss_pqc_demo.py</code> &nbsp;or&nbsp;
+  <code>python demo/wallet_rng_demo.py</code> &nbsp;&mdash; both run in under a second, stdlib-only.
+</footer>
 </body>
 </html>

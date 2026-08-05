@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<!--
+  Content-Security-Policy: hardened for offline-safety.
+   - default-src 'none': block everything by default
+   - script-src 'self' 'unsafe-inline': allow only the inline JS below
+     (no external scripts, no eval, no data:)
+   - style-src 'self' 'unsafe-inline': inline CSS only
+   - connect-src 'none' / img-src 'none': no network, no images loaded
+  The page is functional with the file:// protocol and requires no server.
+-->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'none';
+  script-src 'self' 'unsafe-inline';
+  style-src 'self' 'unsafe-inline';
+  connect-src 'none';
+  img-src 'none';
+  font-src 'none';
+  frame-src 'none';
+  object-src 'none';
+  base-uri 'none';
+  form-action 'none';
+">
+<title>Decepticon Crypto HW Auditor — Interactive Demo</title>
+<style>
+  :root {
+    --bg: #0b1220;
+    --panel: #111b2f;
+    --panel-2: #17223a;
+    --border: #223151;
+    --text: #e5edf7;
+    --muted: #90a0bd;
+    --accent: #f472b6;
+    --accent-2: #fbcfe8;
+    --ok: #86efac;
+    --info: #a5b4fc;
+    --low: #fbbf24;
+    --medium: #f97316;
+    --high: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header {
+    padding: 24px 32px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, #1a1030 0%, #0b1220 100%);
+  }
+  header h1 { margin: 0; font-size: 22px; letter-spacing: .3px; }
+  header h1 .dot { color: var(--accent); }
+  header p { margin: 6px 0 0; color: var(--muted); font-size: 14px; max-width: 780px; }
+  header .ethics { margin-top: 10px; font-size: 12px; color: var(--accent-2);
+    max-width: 780px; padding: 8px 12px; border: 1px solid var(--border);
+    border-radius: 8px; background: rgba(244, 114, 182, .05); }
+  main { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; padding: 24px 32px; }
+  @media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px 20px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .panel h2 {
+    margin: 0; font-size: 15px; letter-spacing: .4px;
+    color: var(--accent-2); text-transform: uppercase; font-weight: 600;
+  }
+  .panel p.desc { margin: 0; font-size: 13px; color: var(--muted); }
+  label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 4px; }
+  label input, label select, label textarea {
+    padding: 8px 10px;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-family: ui-monospace, "Cascadia Mono", Menlo, monospace;
+    font-size: 13px;
+    outline: none;
+  }
+  label textarea { min-height: 80px; resize: vertical; }
+  button {
+    padding: 9px 14px;
+    background: var(--accent);
+    color: #1a0a1e;
+    border: 0;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    letter-spacing: .3px;
+  }
+  button:hover { filter: brightness(1.1); }
+  .verdict {
+    margin-top: 6px; padding: 12px 14px;
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 8px;
+    font-family: ui-monospace, "Cascadia Mono", Menlo, monospace;
+    font-size: 12.5px; line-height: 1.5;
+  }
+  .verdict h3 { margin: 0 0 8px; font-size: 13px; font-family: inherit;
+    color: var(--text); font-weight: 600; }
+  .verdict .kv { color: var(--text); margin-bottom: 8px; }
+  .verdict pre { margin: 0; color: var(--muted); font-size: 11.5px;
+    white-space: pre-wrap; word-break: break-word; }
+  .sev { display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-weight: 600; font-size: 11px; margin-right: 8px; }
+  .sev.INFO   { background: rgba(165,180,252,.15); color: var(--info); }
+  .sev.LOW    { background: rgba(251,191,36,.15);  color: var(--low); }
+  .sev.MEDIUM { background: rgba(249,115,22,.15);  color: var(--medium); }
+  .sev.HIGH   { background: rgba(239,68,68,.15);   color: var(--high); }
+  footer { padding: 12px 32px 24px; color: var(--muted); font-size: 11.5px;
+    max-width: 900px; }
+  footer code { background: var(--panel-2); padding: 1px 5px; border-radius: 3px;
+    border: 1px solid var(--border); font-size: 11px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Decepticon Crypto HW Auditor <span class="dot">·</span> Interactive Demo</h1>
+  <p>
+    Three tools that run entirely in your browser, offline, against synthetic
+    or paste-in inputs. Models the Coldcard-class TRNG&rarr;PRNG silent-fallback
+    incident (2026-07-05, 70 M BTC lost across 1,196 wallets in 41 minutes).
+    No network, no eval, no state persisted.
+  </p>
+  <div class="ethics">
+    <strong>Ethical framing.</strong> This is a defensive audit tool. It scores
+    entropy, seed strength, and firmware version ranges &mdash; it never derives
+    real bitcoin addresses and never leaves your machine. The consent-gated PoC
+    for seed enumeration (<code>seed_recovery_poc.py</code>) lives in the source
+    tree and refuses any target that is not
+    <code>owner_consent==true &amp;&amp; target_class=="owned_device"</code>.
+  </div>
+</header>
+<main>
+
+<!-- Panel 1 — RNG sample scorer -->
+<section class="panel">
+  <h2>RNG sample scorer</h2>
+  <p class="desc">
+    Paste a captured RNG sample as hex or base64 (at least 1 KB
+    recommended). Runs min-entropy H<sub>min</sub>, monobit sigma,
+    longest run, repeated 4-byte block ratio, and catastrophic-block
+    detection &mdash; the primary Coldcard signal is
+    <code>repeated_block_ratio &gt; 0.25</code>.
+  </p>
+  <label>
+    Sample (hex or base64)
+    <textarea id="rng_sample" spellcheck="false" placeholder="Paste ~1 KB here or click Load synthetic below"></textarea>
+  </label>
+  <div style="display:flex; gap:8px; flex-wrap:wrap">
+    <button id="rng_run">Score</button>
+    <button id="rng_load_weak" style="background:var(--panel-2); color:var(--text); border:1px solid var(--border)">Load synthetic weak PRNG</button>
+    <button id="rng_load_healthy" style="background:var(--panel-2); color:var(--text); border:1px solid var(--border)">Load synthetic healthy RNG</button>
+  </div>
+  <div id="rng_out" class="verdict" hidden></div>
+</section>
+
+<!-- Panel 2 — Seed strength -->
+<section class="panel">
+  <h2>BIP39 seed strength</h2>
+  <p class="desc">
+    Score a seed spec against the 128-bit post-Grover target. Raw
+    BIP39 bits + passphrase bits &rarr; effective bits &rarr; pq-bits
+    (Grover halves brute-force cost). Rule-of-thumb: each
+    cryptographically-random printable-ASCII char = ~5.9 bits.
+  </p>
+  <label>
+    Word count
+    <select id="seed_words">
+      <option value="12">12 words (128 raw bits)</option>
+      <option value="15">15 words (160 raw bits)</option>
+      <option value="18">18 words (192 raw bits)</option>
+      <option value="21">21 words (224 raw bits)</option>
+      <option value="24" selected>24 words (256 raw bits)</option>
+    </select>
+  </label>
+  <label>
+    Passphrase bits (0 = no passphrase)
+    <input id="seed_passphrase_bits" type="number" min="0" max="256" step="1" value="0">
+  </label>
+  <label>
+    Target bits (default 128 = NIST Cat-1)
+    <input id="seed_target_bits" type="number" min="64" max="256" step="1" value="128">
+  </label>
+  <div style="display:flex; gap:8px; flex-wrap:wrap">
+    <button id="seed_run">Score</button>
+  </div>
+  <div id="seed_out" class="verdict" hidden></div>
+</section>
+
+<!-- Panel 3 — Coldcard firmware version checker -->
+<section class="panel">
+  <h2>Firmware version check</h2>
+  <p class="desc">
+    Cross-check a vendor + firmware version against the published
+    Coldcard 2026-07-05 vulnerable range. If in-range, rotate any
+    seed generated on this firmware &mdash; the range check alone is
+    authoritative regardless of any code-audit finding.
+  </p>
+  <label>
+    Vendor
+    <select id="fw_vendor">
+      <option value="coldcard" selected>Coldcard</option>
+    </select>
+  </label>
+  <label>
+    Product line
+    <select id="fw_product">
+      <option value="mk2">Mk2</option>
+      <option value="mk3" selected>Mk3</option>
+      <option value="mk4">Mk4</option>
+      <option value="q">Q</option>
+      <option value="edge">Edge</option>
+    </select>
+  </label>
+  <label>
+    Firmware version (e.g. 4.2.0)
+    <input id="fw_version" type="text" value="4.2.0">
+  </label>
+  <div style="display:flex; gap:8px; flex-wrap:wrap">
+    <button id="fw_run">Check</button>
+  </div>
+  <div id="fw_out" class="verdict" hidden></div>
+</section>
+
+</main>
+<footer>
+  Offline-safe. CSP: <code>default-src 'none'; connect-src 'none'</code>.
+  All computation is inline JS; the sample never leaves your browser.
+  For the consent-gated seed-recovery PoC (owner-only, ethical, never
+  returns seed material), use the CLI helper at
+  <code>packages/decepticon/decepticon/skills/standard/crypto-hw/seed-recovery-poc/seed_recovery_poc.py</code>.
+</footer>
+
+<script>
+(function () {
+  // ── Utilities ────────────────────────────────────────────────────
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+  function posInt(v, lo, hi, dflt) {
+    var n = Math.floor(Number(v));
+    if (!isFinite(n) || n < lo || n > hi) return dflt;
+    return n;
+  }
+
+  // ── Sample decode (hex or base64) ─────────────────────────────────
+  function decodeSample(text) {
+    var stripped = String(text || "").trim();
+    if (!stripped) return new Uint8Array(0);
+    var hexOnly = stripped.replace(/\s+/g, "");
+    if (/^[0-9a-fA-F]+$/.test(hexOnly) && hexOnly.length % 2 === 0) {
+      var out = new Uint8Array(hexOnly.length / 2);
+      for (var i = 0; i < out.length; i++) {
+        out[i] = parseInt(hexOnly.substr(i * 2, 2), 16);
+      }
+      return out;
+    }
+    // Base64 (permissive; whitespace already stripped for hex path).
+    try {
+      var bin = atob(stripped.replace(/[\r\n\s]/g, ""));
+      var b = new Uint8Array(bin.length);
+      for (var j = 0; j < bin.length; j++) b[j] = bin.charCodeAt(j);
+      return b;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // ── Entropy metrics ──────────────────────────────────────────────
+  function minEntropyBitsPerByte(data) {
+    if (!data.length) return 0.0;
+    var counts = new Uint32Array(256);
+    for (var i = 0; i < data.length; i++) counts[data[i]]++;
+    var maxCount = 0;
+    for (var k = 0; k < 256; k++) if (counts[k] > maxCount) maxCount = counts[k];
+    var pMax = maxCount / data.length;
+    return pMax > 0 ? -Math.log2(pMax) : 0.0;
+  }
+
+  function monobitSigma(data) {
+    var nBits = 8 * data.length;
+    if (!nBits) return 0.0;
+    var ones = 0;
+    for (var i = 0; i < data.length; i++) {
+      var b = data[i];
+      // Popcount for 8-bit values.
+      b = b - ((b >> 1) & 0x55);
+      b = (b & 0x33) + ((b >> 2) & 0x33);
+      ones += (((b + (b >> 4)) & 0x0f));
+    }
+    var expected = nBits / 2.0;
+    var stddev = Math.sqrt(nBits) / 2.0;
+    return (ones - expected) / stddev;
+  }
+
+  function longestRunBits(data) {
+    if (!data.length) return 0;
+    var longest = 1, current = 1, prev = -1;
+    for (var i = 0; i < data.length; i++) {
+      var b = data[i];
+      for (var bit = 7; bit >= 0; bit--) {
+        var cur = (b >> bit) & 1;
+        if (cur === prev) {
+          current++;
+          if (current > longest) longest = current;
+        } else {
+          current = 1;
+          prev = cur;
+        }
+      }
+    }
+    return longest;
+  }
+
+  function repeatedBlockRatio(data, blockSize) {
+    blockSize = blockSize || 4;
+    if (data.length < 2 * blockSize) return 0.0;
+    var nBlocks = Math.floor(data.length / blockSize);
+    if (nBlocks < 2) return 0.0;
+    var seen = Object.create(null);
+    for (var i = 0; i < nBlocks; i++) {
+      var key = "";
+      for (var j = 0; j < blockSize; j++) {
+        key += String.fromCharCode(data[i * blockSize + j]);
+      }
+      seen[key] = (seen[key] || 0) + 1;
+    }
+    var repeated = 0;
+    for (var k in seen) if (seen[k] > 1) repeated += seen[k];
+    return repeated / nBlocks;
+  }
+
+  function catastrophicBlock(data, blockLen) {
+    blockLen = blockLen || 16;
+    if (data.length < blockLen) return null;
+    var runZero = 0, runOne = 0;
+    for (var i = 0; i < data.length; i++) {
+      if (data[i] === 0) { runZero++; runOne = 0; }
+      else if (data[i] === 0xFF) { runOne++; runZero = 0; }
+      else { runZero = 0; runOne = 0; }
+      if (runZero >= blockLen) return "all-zero run of >= " + blockLen + " bytes";
+      if (runOne  >= blockLen) return "all-ones run of >= " + blockLen + " bytes";
+    }
+    return null;
+  }
+
+  function sampleSeverity(hMin, monobit, repeated, catastrophic) {
+    if (catastrophic || hMin < 4.0 || repeated > 0.25) {
+      return { severity: "HIGH", finding:
+        "RNG output is deterministic or has failed catastrophically (" +
+        (catastrophic || ("H_min=" + hMin.toFixed(2) + ", repeated-block-ratio=" + repeated.toFixed(4))) +
+        "). Assume any key derived from this source is recoverable." };
+    }
+    if (hMin < 6.0 || repeated > 0.01) {
+      return { severity: "MEDIUM", finding:
+        "Structural bias present (H_min=" + hMin.toFixed(2) +
+        ", repeated-block-ratio=" + repeated.toFixed(4) + "). " +
+        "Likely non-cryptographic RNG. Do not use for key derivation." };
+    }
+    if (hMin < 7.0 || Math.abs(monobit) > 4.0) {
+      return { severity: "LOW", finding:
+        "Detectable bias (H_min=" + hMin.toFixed(2) +
+        ", monobit=" + monobit.toFixed(2) + " sigma). Increase sample size and re-audit." };
+    }
+    return { severity: "INFO", finding:
+      "RNG output indistinguishable from ideal at this sample size " +
+      "(H_min=" + hMin.toFixed(2) + ", monobit=" + monobit.toFixed(2) + " sigma)." };
+  }
+
+  function scoreSample(data) {
+    if (!data || !data.length) {
+      return { severity: "INFO", finding: "(empty sample)" };
+    }
+    var hMin = minEntropyBitsPerByte(data);
+    var monobit = monobitSigma(data);
+    var longest = longestRunBits(data);
+    var repeated = repeatedBlockRatio(data);
+    var catastrophic = catastrophicBlock(data);
+    var sev = sampleSeverity(hMin, monobit, repeated, catastrophic);
+    return {
+      severity: sev.severity,
+      finding: sev.finding,
+      bytes: data.length,
+      min_entropy_bits_per_byte: Number(hMin.toFixed(4)),
+      monobit_deviation_sigma: Number(monobit.toFixed(4)),
+      longest_run_bits: longest,
+      repeated_4byte_block_ratio: Number(repeated.toFixed(6)),
+      catastrophic_block: catastrophic
+    };
+  }
+
+  // ── Seed scoring ─────────────────────────────────────────────────
+  var BIP39_BITS = { 12: 128, 15: 160, 18: 192, 21: 224, 24: 256 };
+
+  function scoreSeed(words, passphraseBits, targetBits) {
+    if (!(words in BIP39_BITS)) {
+      return { severity: "INFO", finding: "invalid BIP39 word count" };
+    }
+    var raw = BIP39_BITS[words];
+    var effective = raw + Math.max(0, passphraseBits);
+    var pq = effective / 2.0;
+    var severity, finding;
+    if (pq >= targetBits) {
+      severity = "INFO";
+      finding = "Meets " + targetBits + "-bit post-Grover target.";
+    } else if (pq >= (targetBits * 3) / 4) {
+      severity = "LOW";
+      finding = "Below Cat-1 target (" + Math.floor(pq) + " < " + targetBits +
+                " pq-bits). Add 8-16 passphrase bits on next rotation.";
+    } else if (pq >= targetBits / 2) {
+      severity = "MEDIUM";
+      finding = "Vulnerable to a CRQC by 2035 (" + Math.floor(pq) +
+                " pq-bits). Rotate within 2 years OR add passphrase bits now.";
+    } else {
+      severity = "HIGH";
+      finding = "Recoverable pre-CRQC by nation-state targeting (" + Math.floor(pq) +
+                " pq-bits). Rotate immediately AND add >= 32 passphrase bits.";
+    }
+    return {
+      severity: severity, finding: finding,
+      words: words, raw_entropy_bits: raw,
+      passphrase_bits: passphraseBits, effective_bits: effective,
+      pq_bits: pq, target_bits: targetBits
+    };
+  }
+
+  // ── Firmware version check ───────────────────────────────────────
+  // Vulnerable ranges from Coldcard 2026-07-05 postmortem. (inclusive)
+  var KNOWN_VULN = {
+    coldcard: {
+      mk2:  { from: "4.1.9", to: "4.4.1" },
+      mk3:  { from: "4.1.9", to: "4.4.1" },
+      mk4:  { from: "0.0.0", to: "5.3.99" },
+      q:    { from: "0.0.0", to: "5.3.99" },
+      edge: { from: "0.0.0", to: "6.6.65" }
+    }
+  };
+
+  function versionTuple(v) {
+    var parts = String(v || "").trim().replace(/^v/, "").split(/[.\-+]/);
+    return parts.map(function (p) {
+      var m = /^\d+/.exec(p);
+      return m ? parseInt(m[0], 10) : 0;
+    });
+  }
+
+  function versionCmp(a, b) {
+    var n = Math.max(a.length, b.length);
+    for (var i = 0; i < n; i++) {
+      var av = a[i] || 0, bv = b[i] || 0;
+      if (av !== bv) return av - bv;
+    }
+    return 0;
+  }
+
+  function checkFirmware(vendor, product, version) {
+    var v = String(vendor).toLowerCase();
+    var p = String(product).toLowerCase();
+    if (!KNOWN_VULN[v] || !KNOWN_VULN[v][p]) {
+      return { severity: "INFO",
+        finding: "No published vulnerable range for " + v + " / " + p + " in this dataset." };
+    }
+    var range = KNOWN_VULN[v][p];
+    var vT = versionTuple(version), loT = versionTuple(range.from), hiT = versionTuple(range.to);
+    var inRange = versionCmp(vT, loT) >= 0 && versionCmp(vT, hiT) <= 0;
+    if (inRange) {
+      return { severity: "HIGH",
+        finding: v + " / " + p + " " + version +
+                 " is in the published vulnerable range " + range.from + " .. " + range.to +
+                 ". Rotate any seed generated on this firmware.",
+        vendor: v, product: p, version: version, vulnerable_range: range,
+        in_range: true };
+    }
+    return { severity: "INFO",
+      finding: v + " / " + p + " " + version +
+               " is NOT in the published vulnerable range " + range.from + " .. " + range.to + ".",
+      vendor: v, product: p, version: version, vulnerable_range: range,
+      in_range: false };
+  }
+
+  // ── Synthetic samples ────────────────────────────────────────────
+  function coldcardShapedSample() {
+    // Same LCG the CLI demo uses (mimics the Coldcard fallback shape).
+    // 4 KiB is enough to make the repeated-block-ratio saturate.
+    var LCG_A = 1103515245, LCG_C = 12345, LCG_MOD = Math.pow(2, 31);
+    var state = 197001629; // "0x0BADC0DE" mod 2^31 — deterministic + reproducible
+    var n = 4096;
+    var hex = "";
+    for (var i = 0; i < n; i++) {
+      state = (LCG_A * state + LCG_C) % LCG_MOD;
+      var b = state & 0xFF;
+      hex += (b < 16 ? "0" : "") + b.toString(16);
+    }
+    return hex;
+  }
+  function healthyRandomSample() {
+    // Prefer crypto.getRandomValues (available in every modern browser).
+    var n = 4096;
+    var buf = new Uint8Array(n);
+    if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+      crypto.getRandomValues(buf);
+    } else {
+      // Ultimate fallback — Math.random is NOT crypto-quality, but at
+      // least distinguishable from the LCG signature above.
+      for (var i = 0; i < n; i++) buf[i] = Math.floor(Math.random() * 256);
+    }
+    var hex = "";
+    for (var j = 0; j < n; j++) {
+      hex += (buf[j] < 16 ? "0" : "") + buf[j].toString(16);
+    }
+    return hex;
+  }
+
+  // ── Rendering ────────────────────────────────────────────────────
+  function render(elId, verdict, title) {
+    var el = document.getElementById(elId);
+    var sev = verdict.severity || "INFO";
+    var text = verdict.finding || "(no finding)";
+    el.hidden = false;
+    el.innerHTML =
+      '<h3><span class="sev ' + esc(sev) + '">' + esc(sev) + '</span>' + esc(title) + '</h3>' +
+      '<div class="kv">' + esc(text) + '</div>' +
+      '<pre>' + esc(JSON.stringify(verdict, null, 2)) + '</pre>';
+  }
+
+  // ── Wire buttons ─────────────────────────────────────────────────
+  document.getElementById("rng_run").addEventListener("click", function () {
+    var text = document.getElementById("rng_sample").value;
+    var decoded = decodeSample(text);
+    if (decoded === null) {
+      render("rng_out", { severity: "INFO", finding: "Could not decode as hex or base64." }, " RNG sample verdict");
+      return;
+    }
+    render("rng_out", scoreSample(decoded), " RNG sample verdict");
+  });
+  document.getElementById("rng_load_weak").addEventListener("click", function () {
+    document.getElementById("rng_sample").value = coldcardShapedSample();
+    document.getElementById("rng_run").click();
+  });
+  document.getElementById("rng_load_healthy").addEventListener("click", function () {
+    document.getElementById("rng_sample").value = healthyRandomSample();
+    document.getElementById("rng_run").click();
+  });
+
+  document.getElementById("seed_run").addEventListener("click", function () {
+    var words = posInt(document.getElementById("seed_words").value, 12, 24, 24);
+    var pp = posInt(document.getElementById("seed_passphrase_bits").value, 0, 256, 0);
+    var target = posInt(document.getElementById("seed_target_bits").value, 64, 256, 128);
+    render("seed_out", scoreSeed(words, pp, target), " Seed strength verdict");
+  });
+
+  document.getElementById("fw_run").addEventListener("click", function () {
+    var vendor = document.getElementById("fw_vendor").value;
+    var product = document.getElementById("fw_product").value;
+    var version = document.getElementById("fw_version").value;
+    // Whitelist vendor/product against KNOWN_VULN.
+    if (!KNOWN_VULN[vendor]) vendor = "coldcard";
+    if (!KNOWN_VULN[vendor][product]) product = "mk3";
+    render("fw_out", checkFirmware(vendor, product, version), " Firmware version verdict");
+  });
+
+  // Preload one-click demo state so the page is immediately useful.
+  document.getElementById("rng_load_weak").click();
+  document.getElementById("seed_run").click();
+  document.getElementById("fw_run").click();
+})();
+</script>
+</body>
+</html>
