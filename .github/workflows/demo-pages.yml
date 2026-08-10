@@ -1,6 +1,11 @@
 name: demo-pages
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "demo/**"
+      - ".github/workflows/demo-pages.yml"
   workflow_dispatch:
 
 permissions:
