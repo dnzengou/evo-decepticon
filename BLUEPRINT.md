@@ -1,7 +1,7 @@
 # Decepticon — Blueprint
 
-**Version:** 1.0.8
-**Date:** 2026-08-04
+**Version:** 1.0.9
+**Date:** 2026-08-05
 **Live URL:** [decepticon.red](https://decepticon.red)
 **Docs:** [docs.decepticon.red](https://docs.decepticon.red)
 **Repo:** [PurpleAILAB/Decepticon](https://github.com/PurpleAILAB/Decepticon)
@@ -70,11 +70,28 @@ engagement.
 | Homebrew formula | 🔲 | planned |
 | Community Skill Marketplace | 🔲 | planned — third-party skills via manifest |
 | GNSS Auditor demo (local) | ✅ v1.0.7 | `git clone && open demo/gnss_auditor_ui.html` (offline-safe) |
-| GNSS Auditor demo (Pages) | 🔲 v1.0.7 | Workflow ready — needs Pages enabled (public repo or paid plan) |
+| Crypto HW Auditor demo (local) | ✅ v1.0.9 | `git clone && open demo/wallet_auditor_ui.html` (offline-safe) |
+| Demo hub landing (local) | ✅ v1.0.9 | `git clone && open demo/index.html` (routes to both HTML demos) |
+| Interactive demos (Pages) | 🔲 v1.0.9 | Workflow ready — needs Pages enabled (public repo or paid plan) |
 
 ---
 
 ## Roadmap
+
+### v1.0.9 (2026-08-05) — Coldcard root-cause coverage + interactive UI
+
+Extends the v1.0.8 Crypto HW Auditor with the specific technical root
+cause published in the 2026-07-05 Coldcard postmortem (Block writeup:
+70 M BTC / 1,196 wallets / 41 minutes). Adds a static firmware source
+auditor for the `#ifndef`-vs-`#if` guard bug, an ethical owner-consent
+seed-recovery PoC, an interactive HTML UI mirroring GNSS Auditor, and
+a demo hub landing routing between both HTML demos.
+
+- ✅ `skills/standard/crypto-hw/firmware-guard-audit/` — static-code auditor for the Coldcard root cause (defined-but-zero `#ifndef` guard, same-name RNG symbol in `hw/` vs `soft/` paths, weak-symbol RNG). Helper `firmware_guard_audit.py` (stdlib-only). Includes vendor version-range table (Coldcard Mk2/Mk3 4.1.9–4.4.1, Mk4/Q pre-5.4.0, Edge pre-6.6.66) with auto-HIGH escalation.
+- ✅ `skills/standard/crypto-hw/seed-recovery-poc/` — ethical owner-consent PoC that proves enumerability WITHOUT deriving real bitcoin addresses. Helper `seed_recovery_poc.py` — RoE-gated on `owner_consent==true AND target_class=="owned_device"`, simulated HMAC-SHA256 derivation (not BIP32/BIP44), search-cap acknowledgement above 2^28, recovered seed zeroized in place before return.
+- ✅ `demo/wallet_auditor_ui.html` — offline-safe interactive UI (CSP `default-src 'none'`) with three tools: RNG sample scorer, BIP39 seed strength, Coldcard firmware version checker. Ethical framing panel prominently displayed.
+- ✅ `demo/index.html` — refactored from redirect to a hub landing card layout routing between GNSS Auditor and Crypto HW Auditor demos.
+- ✅ Postmortem template extended with the full Coldcard worked example: root causes A/B/C, sweep-signature fingerprint (three derivation paths at once), the AI-model blind spot (Coldcard's own LLM audit found nothing), attribution note.
 
 ### v1.0.8 (2026-08-04) — Crypto HW Auditor (Coldcard-class RNG response)
 
@@ -169,6 +186,14 @@ tests/unit/core/test_evo_metaclaw.py                                           N
 ---
 
 ## Changelog
+
+### v1.0.9 — 2026-08-05
+- New: `firmware-guard-audit/` sub-skill + `firmware_guard_audit.py` helper (Coldcard root-cause static auditor: defined-but-zero `#ifndef`, weak symbols, hw/soft same-name aliasing)
+- New: `seed-recovery-poc/` sub-skill + `seed_recovery_poc.py` — owner-consent, RoE-gated PoC; simulated derivation (not BIP32/BIP44); zeroization of recovered material
+- New: `demo/wallet_auditor_ui.html` — offline-safe interactive UI (RNG scorer + BIP39 seed strength + firmware version checker)
+- Change: `demo/index.html` refactored to a hub landing (both HTML demos + CLI demo pointers)
+- Doc: postmortem template extended with the full Coldcard worked example (root causes A/B/C, sweep-signature fingerprint, AI-model blind spot, attribution note)
+- Response: defensive + measured-offensive coverage of the 2026-07-05 Coldcard incident is now end-to-end (static-code audit → runtime RNG audit → owner-consent enumerability PoC → postmortem)
 
 ### v1.0.8 — 2026-08-04
 - New: `crypto_hw_auditor` specialist agent + prompt (Coldcard-class RNG + BIP39 seed audit)
