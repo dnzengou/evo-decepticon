@@ -69,10 +69,10 @@ engagement.
 | VS Code / Cursor MCP | 🔲 | planned — expose GNSS auditor + KG tools |
 | Homebrew formula | 🔲 | planned |
 | Community Skill Marketplace | 🔲 | planned — third-party skills via manifest |
-| GNSS Auditor demo (local) | ✅ v1.0.7 | `git clone && open demo/gnss_auditor_ui.html` (offline-safe) |
-| Crypto HW Auditor demo (local) | ✅ v1.0.9 | `git clone && open demo/wallet_auditor_ui.html` (offline-safe) |
-| Demo hub landing (local) | ✅ v1.0.9 | `git clone && open demo/index.html` (routes to both HTML demos) |
-| Interactive demos (Pages) | 🔲 v1.0.9 | Workflow ready — needs Pages enabled (public repo or paid plan) |
+| GNSS Auditor demo (Pages) | ✅ v1.0.9 | [dnzengou.github.io/evo-decepticon/gnss_auditor_ui.html](https://dnzengou.github.io/evo-decepticon/gnss_auditor_ui.html) |
+| Crypto HW Auditor demo (Pages) | ✅ v1.0.9 | [dnzengou.github.io/evo-decepticon/wallet_auditor_ui.html](https://dnzengou.github.io/evo-decepticon/wallet_auditor_ui.html) |
+| Demo hub landing (Pages) | ✅ v1.0.9 | [dnzengou.github.io/evo-decepticon](https://dnzengou.github.io/evo-decepticon/) |
+| Local fallback | ✅ | `git clone && open demo/index.html` (offline-safe, CSP `default-src 'none'`) |
 
 ---
 
@@ -91,6 +91,7 @@ a demo hub landing routing between both HTML demos.
 - ✅ `skills/standard/crypto-hw/seed-recovery-poc/` — ethical owner-consent PoC that proves enumerability WITHOUT deriving real bitcoin addresses. Helper `seed_recovery_poc.py` — RoE-gated on `owner_consent==true AND target_class=="owned_device"`, simulated HMAC-SHA256 derivation (not BIP32/BIP44), search-cap acknowledgement above 2^28, recovered seed zeroized in place before return.
 - ✅ `demo/wallet_auditor_ui.html` — offline-safe interactive UI (CSP `default-src 'none'`) with three tools: RNG sample scorer, BIP39 seed strength, Coldcard firmware version checker. Ethical framing panel prominently displayed.
 - ✅ `demo/index.html` — refactored from redirect to a hub landing card layout routing between GNSS Auditor and Crypto HW Auditor demos.
+- ✅ **Live** at [dnzengou.github.io/evo-decepticon](https://dnzengou.github.io/evo-decepticon/) — repo made public 2026-08-10, Pages enabled via `gh api -X POST repos/dnzengou/evo-decepticon/pages -f build_type=workflow`, `demo-pages.yml` workflow dispatched successfully (12s deploy).
 - ✅ Postmortem template extended with the full Coldcard worked example: root causes A/B/C, sweep-signature fingerprint (three derivation paths at once), the AI-model blind spot (Coldcard's own LLM audit found nothing), attribution note.
 
 ### v1.0.8 (2026-08-04) — Crypto HW Auditor (Coldcard-class RNG response)
