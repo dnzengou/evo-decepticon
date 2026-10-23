@@ -129,9 +129,68 @@ histogram as billing telemetry — not the raw signals.
 
 ---
 
+## EvoSkillOps — the offline half
+
+Everything above is the *runtime* half: `propose` a genome, score it,
+`record_signal`. That half deliberately only reads policy and appends
+trajectory data — it never trains anything, because training inside an
+active engagement is exactly the bug the "never break an active op"
+discipline forbids.
+
+The *offline* half is
+[`evo_skillops.py`](../packages/decepticon/decepticon/core/evo_skillops.py)
+— the nightly job (or on-demand `decepticon-cli skillops` run) that turns
+the accumulated `signals.jsonl` back into a better policy and a fitter
+population. Also stdlib-only.
+
+| Operation            | What it does                                                                                     |
+|----------------------|--------------------------------------------------------------------------------------------------|
+| `retrain_qgate`      | Refit the linear Q-gate by logistic regression over the signal corpus, predicting `success` from `(reward, tokens_used, wallclock_s)`. Features are standardised for stable gradient descent, then the coefficients are mapped back to raw-feature space so they drop straight into `QGate` under the unchanged `score() >= threshold` rule. |
+| `compute_fitness`    | Rank genomes by mean Q-gate score — reward *net of* token/wallclock cost, so a genome that wins cheaply outranks one that wins the same reward by burning the budget. |
+| `evolve_population`  | Select the top-k eligible genomes (gated by a minimum signal count so one lucky turn can't seed a generation) and spawn skill-mutated children — drop / add / swap a skill — wiring `parent_id` + `generation` so lineage compounds. |
+| `build_report`       | Aggregate the corpus into the billing-safe telemetry (`generation`, `signal_count`, fitness histogram). Aggregates only — never a raw signal. |
+
+Composed by the `EvoSkillOps` façade over a `GenomeStore`:
+
+- `retrain()` — load signals, refit, and **persist** the weights
+  atomically to `qgate.json` in the run dir. A degenerate corpus (no
+  signals, or a single label — nothing was ever rejected, so there's no
+  boundary to fit) is a no-op that keeps the seed policy.
+- `evolve()` — load genomes + signals, evolve, and append the children
+  to the lineage log.
+- `report()` — emit the fitness telemetry.
+
+### Closing the loop
+
+The runtime consumes what the offline job produces. On construction,
+`EvoMetaClaw` autoloads `qgate.json` from the run dir when no gate is
+injected — so the next engagement scores with the retrained policy
+instead of the seed. A missing file falls back to the seed; a *corrupt*
+file also falls back (wrapped in `try/except`, logged) rather than
+blocking boot. This is the moat's compounding mechanism in code: a fork
+of the repo starts at `qgate.json`-absent (generation 0); a fork of the
+tenancy inherits the weights its operators have trained.
+
+### CLI
+
+```
+decepticon-cli skillops retrain [--epochs N --lr F --l2 F --dry-run]
+decepticon-cli skillops evolve  [--top-k N --min-signals N --skill ID ... --seed N --dry-run]
+decepticon-cli skillops report
+```
+
+All three take `--run-dir` (defaults to `$EVO_METACLAW_RUN_DIR` or
+`evo-metaclaw-run/`) and `--json`. `retrain` / `evolve` exit non-zero
+(no-op) when there was nothing to train on or no novel mutation — handy
+as a cron guard.
+
+---
+
 ## See also
 
-- [`packages/decepticon/decepticon/core/evo_metaclaw.py`](../packages/decepticon/decepticon/core/evo_metaclaw.py) — the core module.
-- [`tests/unit/core/test_evo_metaclaw.py`](../tests/unit/core/test_evo_metaclaw.py) — 14 unit tests.
+- [`packages/decepticon/decepticon/core/evo_metaclaw.py`](../packages/decepticon/decepticon/core/evo_metaclaw.py) — the runtime core.
+- [`packages/decepticon/decepticon/core/evo_skillops.py`](../packages/decepticon/decepticon/core/evo_skillops.py) — the offline ops layer.
+- [`tests/unit/core/test_evo_metaclaw.py`](../tests/unit/core/test_evo_metaclaw.py) — runtime unit tests.
+- [`tests/unit/core/test_evo_skillops.py`](../tests/unit/core/test_evo_skillops.py) — offline-ops unit tests.
 - [`BLUEPRINT.md`](../BLUEPRINT.md) — the "two moats" framing at the top.
 - [`docs/skills.md`](skills.md) — how skills load; unchanged by EvoMetaClaw.
