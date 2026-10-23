@@ -225,6 +225,10 @@ class GenomeStore:
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.genomes_path = self.run_dir / "genomes.jsonl"
         self.signals_path = self.run_dir / "signals.jsonl"
+        # Retrained Q-gate weights land here; the runtime loads them on
+        # the next boot. Kept beside the trajectory data it was trained
+        # on — never shipped across tenancies.
+        self.weights_path = self.run_dir / "qgate.json"
 
     def append_genome(self, genome: Genome) -> None:
         with self.genomes_path.open("a", encoding="utf-8") as f:
@@ -245,6 +249,43 @@ class GenomeStore:
                     continue
                 out.append(Signal(**json.loads(line)))
         return out
+
+    def load_genomes(self) -> list[Genome]:
+        """Replay the genome lineage log. Later rows win on genome_id so
+        the result is deduplicated to the latest write per genome, in
+        first-seen order — the shape the evolution pass expects."""
+        if not self.genomes_path.exists():
+            return []
+        by_id: dict[str, Genome] = {}
+        with self.genomes_path.open(encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                row = json.loads(line)
+                row["skill_ids"] = tuple(row.get("skill_ids", ()))
+                genome = Genome(**row)
+                by_id[genome.genome_id] = genome
+        return list(by_id.values())
+
+    def save_weights(
+        self, weights: dict[str, float], threshold: float, meta: dict[str, Any] | None = None
+    ) -> None:
+        """Persist retrained Q-gate weights atomically (write-then-rename)
+        so a concurrent runtime read never sees a half-written file."""
+        payload: dict[str, Any] = {"weights": weights, "threshold": threshold}
+        if meta:
+            payload["meta"] = meta
+        tmp = self.weights_path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        tmp.replace(self.weights_path)
+
+    def load_weights(self) -> dict[str, Any] | None:
+        """Return the persisted ``{"weights", "threshold", ...}`` dict, or
+        ``None`` when no retrain has run yet (seed weights apply)."""
+        if not self.weights_path.exists():
+            return None
+        return json.loads(self.weights_path.read_text(encoding="utf-8"))
 
 
 def hash_state(payload: Any) -> str:
@@ -268,11 +309,27 @@ class EvoMetaClaw:
         store: GenomeStore | None = None,
         clock: Any = None,
     ) -> None:
-        self.q_gate = q_gate or QGate()
         self.buffer = buffer or GRPOBuffer()
         self.breaker = breaker or CircuitBreaker(clock=clock)
         self.store = store or GenomeStore(run_dir)
+        # When no gate is injected, prefer weights the nightly EvoSkillOps
+        # retrain persisted to the run dir; fall back to the seed policy.
+        # Wrapped so a corrupt weights file can never block an engagement.
+        self.q_gate = q_gate or self._load_gate()
         self._clock = clock or time.time
+
+    def _load_gate(self) -> QGate:
+        try:
+            payload = self.store.load_weights()
+        except Exception:
+            log.exception("evo_metaclaw: failed to load retrained weights; using seed policy")
+            payload = None
+        if not payload:
+            return QGate()
+        return QGate(
+            weights=payload.get("weights"),
+            threshold=payload.get("threshold", _DEFAULT_ACCEPT_THRESHOLD),
+        )
 
     def propose(
         self,

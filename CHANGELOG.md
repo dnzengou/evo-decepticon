@@ -16,6 +16,27 @@ LangGraph, sandbox) keeps the always-on contract.
 
 ### Added
 
+- **EvoSkillOps — the offline half of the EvoMetaClaw flywheel
+  (`decepticon/core/evo_skillops.py`, `decepticon-cli skillops`).** The
+  runtime half only ever *scored* genomes and appended signals; the
+  nightly retrain and genome evolution the moat doc promised had no
+  code behind them. EvoSkillOps closes the loop, stdlib-only: (1)
+  `retrain_qgate` refits the linear Q-gate over `signals.jsonl` by
+  logistic regression (features standardised for stable GD, then mapped
+  back to raw-feature space so the learned weights drop into `QGate`
+  under the unchanged `score() >= threshold` rule); (2) `compute_fitness`
+  ranks genomes by mean gate score (reward *net of* token/wallclock
+  cost); (3) `evolve_population` promotes the top-k eligible genomes and
+  spawns skill-mutated children (drop/add/swap), wiring `parent_id` +
+  `generation` so lineage compounds. Retrained weights persist atomically
+  to `qgate.json` in the run dir and the `EvoMetaClaw` runtime autoloads
+  them on next boot (falling back to the seed policy on a missing or
+  corrupt file — the flywheel never breaks an engagement). The
+  `skillops` CLI (`retrain` / `evolve` / `report`, with `--json` and
+  `--dry-run`) is the headless entry for the nightly job; `report` emits
+  billing-safe aggregates only (`generation`, `signal_count`, fitness
+  histogram) — raw signals never leave the tenancy. 32 new unit tests;
+  see [docs/evo-metaclaw.md](docs/evo-metaclaw.md).
 - **Open-web acquisition engine (`web_search` / `web_fetch`).** A new
   site-agnostic fetch engine (`decepticon/sandbox_web/`) that escalates past
   WAF/anti-bot defenses — Verdict-based 4-layer validation ("HTTP 200 is an
