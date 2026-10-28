@@ -6,6 +6,8 @@ and never leaves that tenancy:
 
   retrain   Refit the Q-gate weights over signals.jsonl and persist them.
   evolve    Spawn mutated children of the fittest genomes.
+  promote   Select + persist the champion genome per role (runtime picks it).
+  grpo      Export the signal corpus as GRPO training rows (grpo.jsonl).
   report    Print the billing-safe fitness telemetry (aggregates only).
 """
 
@@ -63,6 +65,25 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     evolve.add_argument(
         "--dry-run", action="store_true", help="List children without appending them."
+    )
+
+    promote = sub.add_parser("promote", help="Select + persist the champion genome per role.")
+    promote.add_argument(
+        "--min-signals", type=int, default=3, help="Min signals before a genome is eligible."
+    )
+    promote.add_argument(
+        "--dry-run", action="store_true", help="Show champions without writing champions.json."
+    )
+
+    grpo = sub.add_parser("grpo", help="Export the signal corpus as GRPO training rows.")
+    grpo.add_argument(
+        "--group-size", type=int, default=None, help="Cap each context group to its last N signals."
+    )
+    grpo.add_argument(
+        "--min-group", type=int, default=2, help="Skip contexts with fewer than N signals."
+    )
+    grpo.add_argument(
+        "--dry-run", action="store_true", help="Count rows without writing grpo.jsonl."
     )
 
     sub.add_parser("report", help="Print billing-safe fitness telemetry.")
@@ -145,6 +166,42 @@ def _cmd_report(ops: EvoSkillOps, args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cmd_promote(ops: EvoSkillOps, args: argparse.Namespace) -> int:
+    champions = ops.promote(min_signals=args.min_signals, persist=not args.dry_run)
+    payload = {
+        "champions": {role: c.to_json() for role, c in champions.items()},
+        "persisted": bool(champions) and not args.dry_run,
+    }
+    lines = [f"promote: {len(champions)} champion(s)"]
+    for role, c in sorted(champions.items()):
+        lines.append(
+            f"  {role}: {c.genome.genome_id}  fit {c.fitness:+.3f}  "
+            f"n {c.n_signals}  gen {c.genome.generation}  {list(c.genome.skill_ids)}"
+        )
+    if not champions:
+        lines.append("  (none — no role has an eligible genome yet)")
+    _emit(payload, as_json=args.json, text="\n".join(lines) + "\n")
+    return EXIT_OK if champions else EXIT_NOOP
+
+
+def _cmd_grpo(ops: EvoSkillOps, args: argparse.Namespace) -> int:
+    rows = ops.export_grpo(
+        group_size=args.group_size, min_group=args.min_group, persist=not args.dry_run
+    )
+    contexts = len({r["state_hash"] for r in rows})
+    payload = {
+        "rows": len(rows),
+        "contexts": contexts,
+        "persisted": bool(rows) and not args.dry_run,
+    }
+    text = (
+        f"grpo: {len(rows)} row(s) across {contexts} context(s); "
+        f"{'written' if payload['persisted'] else 'not written'}\n"
+    )
+    _emit(payload, as_json=args.json, text=text)
+    return EXIT_OK if rows else EXIT_NOOP
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     ops = EvoSkillOps(store=GenomeStore(args.run_dir))
@@ -152,6 +209,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_retrain(ops, args)
     if args.command == "evolve":
         return _cmd_evolve(ops, args)
+    if args.command == "promote":
+        return _cmd_promote(ops, args)
+    if args.command == "grpo":
+        return _cmd_grpo(ops, args)
     if args.command == "report":
         return _cmd_report(ops, args)
     print(f"unknown skillops subcommand: {args.command}", file=sys.stderr)

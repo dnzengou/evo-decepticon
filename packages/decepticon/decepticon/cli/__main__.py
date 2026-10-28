@@ -22,7 +22,7 @@ def _print_help() -> int:
         "  audit              Verify engagement audit ledgers\n"
         "  zip                Export/import engagement workspaces as ZIP archives\n\n"
         "  export-transcript  Render an engagement event log as Markdown\n\n"
-        "  skillops           Offline EvoMetaClaw ops (retrain|evolve|report)\n\n"
+        "  skillops           Offline EvoMetaClaw ops (retrain|evolve|promote|grpo|report)\n\n"
         "  telemetry          Inspect/control usage telemetry (status|preview|off|on)\n\n"
         "Run a subcommand with --help for its flags.",
         file=sys.stderr,

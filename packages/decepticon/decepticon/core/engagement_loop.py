@@ -46,8 +46,24 @@ class EngagementLoop:
         prompt: str,
         parent_id: str | None = None,
         generation: int = 0,
+        prefer_champion: bool = False,
     ) -> Genome | None:
-        """Propose a genome — never raises. Returns ``None`` on failure."""
+        """Propose a genome — never raises. Returns ``None`` on failure.
+
+        With ``prefer_champion``, consult the promoted champion for ``role``
+        first: if one exists and is not in cooldown, return it instead of a
+        cold proposal. The flywheel's selection arm — variation (evolve) →
+        selection (promote) → deployment (here). Any failure falls straight
+        through to the explicit proposal.
+        """
+        if prefer_champion:
+            try:
+                champ = self.evo.champion(role)
+            except Exception:
+                log.exception("evo_metaclaw.champion lookup failed; proposing cold")
+                champ = None
+            if champ is not None and self.evo.is_available(champ.genome_id):
+                return champ
         try:
             genome = self.evo.propose(
                 role=role,

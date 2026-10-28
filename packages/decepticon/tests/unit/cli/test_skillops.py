@@ -98,3 +98,43 @@ def test_dispatch_through_main(tmp_path: Path, capsys) -> None:
     rc = cli_main(["skillops", "--run-dir", str(run_dir), "report"])
     assert rc == EXIT_OK
     assert "fitness report" in capsys.readouterr().out
+
+
+def test_promote_persists(tmp_path: Path, capsys) -> None:
+    run_dir = _seed_run_dir(tmp_path)
+    rc = skillops_main(["--run-dir", str(run_dir), "--json", "promote"])
+    assert rc == EXIT_OK
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["persisted"] is True
+    assert payload["champions"]["recon"]["genome"]["genome_id"] == "good"
+    assert (run_dir / "champions.json").exists()
+
+
+def test_promote_dry_run(tmp_path: Path, capsys) -> None:
+    run_dir = _seed_run_dir(tmp_path)
+    rc = skillops_main(["--run-dir", str(run_dir), "promote", "--dry-run"])
+    assert rc == EXIT_OK
+    assert not (run_dir / "champions.json").exists()
+
+
+def test_promote_empty_is_noop(tmp_path: Path, capsys) -> None:
+    rc = skillops_main(["--run-dir", str(tmp_path / "empty"), "promote"])
+    assert rc == EXIT_NOOP
+    assert "none" in capsys.readouterr().out
+
+
+def test_grpo_exports(tmp_path: Path, capsys) -> None:
+    run_dir = _seed_run_dir(tmp_path)
+    rc = skillops_main(["--run-dir", str(run_dir), "--json", "grpo"])
+    assert rc == EXIT_OK
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["rows"] > 0
+    assert payload["persisted"] is True
+    assert (run_dir / "grpo.jsonl").exists()
+
+
+def test_grpo_dry_run(tmp_path: Path, capsys) -> None:
+    run_dir = _seed_run_dir(tmp_path)
+    rc = skillops_main(["--run-dir", str(run_dir), "grpo", "--dry-run"])
+    assert rc == EXIT_OK
+    assert not (run_dir / "grpo.jsonl").exists()

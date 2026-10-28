@@ -16,6 +16,24 @@ LangGraph, sandbox) keeps the always-on contract.
 
 ### Added
 
+- **EvoMetaClaw selection loop + GRPO export.** EvoSkillOps could retrain
+  the gate and *evolve* genomes, but nothing made the runtime use an
+  evolved genome — variation with no selection. This closes it: (1)
+  `select_champions` picks the fittest proven genome per role and
+  `EvoSkillOps.promote()` persists the map to `champions.json` (config
+  only — genome + fitness aggregate, never a raw signal); (2)
+  `EvoMetaClaw.champion(role)` reconstructs it and
+  `EngagementLoop.propose(..., prefer_champion=True)` runs it instead of
+  a cold proposal, falling through to the cold path on any
+  missing/malformed champion so selection never blocks an engagement; (3)
+  `export_grpo` flattens `signals.jsonl` into group-normalised
+  `(state, action, reward, advantage)` rows (`grpo.jsonl`) for a
+  downstream GRPO trainer — the offline complement to the runtime
+  `GRPOBuffer`. Two new CLI subcommands, `skillops promote` and
+  `skillops grpo` (both `--json` / `--dry-run`, non-zero on no-op), so a
+  nightly job is `retrain && evolve && promote && grpo`. `GenomeStore`
+  gains atomic `save_champions` / `load_champions` / `save_grpo`. 25 new
+  unit tests; see [docs/evo-metaclaw.md](docs/evo-metaclaw.md).
 - **EvoSkillOps — the offline half of the EvoMetaClaw flywheel
   (`decepticon/core/evo_skillops.py`, `decepticon-cli skillops`).** The
   runtime half only ever *scored* genomes and appended signals; the

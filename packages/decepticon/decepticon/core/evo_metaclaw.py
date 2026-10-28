@@ -229,6 +229,12 @@ class GenomeStore:
         # the next boot. Kept beside the trajectory data it was trained
         # on — never shipped across tenancies.
         self.weights_path = self.run_dir / "qgate.json"
+        # The per-role champion genome EvoSkillOps promoted — the runtime
+        # prefers it over a cold proposal. Config only (never a signal).
+        self.champions_path = self.run_dir / "champions.json"
+        # Offline GRPO export: group-normalised (state, action, reward,
+        # advantage) rows a downstream trainer consumes.
+        self.grpo_path = self.run_dir / "grpo.jsonl"
 
     def append_genome(self, genome: Genome) -> None:
         with self.genomes_path.open("a", encoding="utf-8") as f:
@@ -286,6 +292,30 @@ class GenomeStore:
         if not self.weights_path.exists():
             return None
         return json.loads(self.weights_path.read_text(encoding="utf-8"))
+
+    def save_champions(self, champions: dict[str, Any]) -> None:
+        """Persist the role→champion-genome map atomically. The payload is
+        config only (genome + fitness aggregate) — never a raw signal."""
+        tmp = self.champions_path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(champions, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        tmp.replace(self.champions_path)
+
+    def load_champions(self) -> dict[str, Any]:
+        """Return the role→champion map, or ``{}`` when none is promoted."""
+        if not self.champions_path.exists():
+            return {}
+        return json.loads(self.champions_path.read_text(encoding="utf-8"))
+
+    def save_grpo(self, rows: list[dict[str, Any]]) -> int:
+        """Overwrite the GRPO export with ``rows`` (JSONL). Returns the
+        count written. A fresh export each run — the signal log is the
+        source of truth, this file is a derived artefact."""
+        tmp = self.grpo_path.with_suffix(".jsonl.tmp")
+        with tmp.open("w", encoding="utf-8") as f:
+            for row in rows:
+                f.write(json.dumps(row, sort_keys=True) + "\n")
+        tmp.replace(self.grpo_path)
+        return len(rows)
 
 
 def hash_state(payload: Any) -> str:
@@ -362,6 +392,31 @@ class EvoMetaClaw:
     def is_available(self, genome_id: str) -> bool:
         """False if the breaker has this genome in cooldown."""
         return not self.breaker.is_tripped(genome_id)
+
+    def champion(self, role: str) -> Genome | None:
+        """The champion genome EvoSkillOps promoted for ``role``, or ``None``.
+
+        This is the selection arm of the flywheel: the offline pass writes
+        the fittest proven genome per role to ``champions.json`` and the
+        runtime reaches for it here. Reconstructs a :class:`Genome` from the
+        stored config; a missing or corrupt map yields ``None`` so a cold
+        proposal still goes ahead — selection never blocks an engagement.
+        """
+        try:
+            champions = self.store.load_champions()
+        except Exception:
+            log.exception("evo_metaclaw: failed to load champions; proposing cold")
+            return None
+        entry = champions.get(role)
+        if not entry:
+            return None
+        try:
+            genome_row = dict(entry["genome"])
+            genome_row["skill_ids"] = tuple(genome_row.get("skill_ids", ()))
+            return Genome(**genome_row)
+        except (KeyError, TypeError):
+            log.warning("evo_metaclaw: malformed champion for role %s; proposing cold", role)
+            return None
 
     def record_signal(
         self,

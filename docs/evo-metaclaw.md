@@ -158,7 +158,29 @@ Composed by the `EvoSkillOps` façade over a `GenomeStore`:
   boundary to fit) is a no-op that keeps the seed policy.
 - `evolve()` — load genomes + signals, evolve, and append the children
   to the lineage log.
+- `promote()` — select the fittest proven genome per role and persist the
+  role→champion map to `champions.json`.
+- `export_grpo()` — flatten the signal corpus into group-normalised GRPO
+  rows (`grpo.jsonl`) for a downstream trainer.
 - `report()` — emit the fitness telemetry.
+
+### Variation → selection → deployment
+
+Evolution (`evolve`) is only the *variation* arm — it spawns children but
+nothing makes the runtime use them. `promote` is the *selection* arm, and
+`EvoMetaClaw.champion(role)` is *deployment*:
+
+1. **Variation** — `evolve_population` mutates the fittest genomes into
+   children (drop / add / swap a skill), bumping `generation`.
+2. **Selection** — `select_champions` ranks every genome per role by mean
+   Q-gate score and writes the winner (gated by a minimum signal count) to
+   `champions.json`. Config only — the genome plus its fitness aggregate,
+   never a raw signal.
+3. **Deployment** — `EngagementLoop.propose(..., prefer_champion=True)`
+   asks `EvoMetaClaw.champion(role)` first; if a champion exists and is not
+   in breaker cooldown, the engagement runs it instead of a cold proposal.
+   A missing or malformed champion falls through to the cold proposal —
+   selection never blocks an engagement.
 
 ### Closing the loop
 
@@ -167,22 +189,26 @@ The runtime consumes what the offline job produces. On construction,
 injected — so the next engagement scores with the retrained policy
 instead of the seed. A missing file falls back to the seed; a *corrupt*
 file also falls back (wrapped in `try/except`, logged) rather than
-blocking boot. This is the moat's compounding mechanism in code: a fork
-of the repo starts at `qgate.json`-absent (generation 0); a fork of the
-tenancy inherits the weights its operators have trained.
+blocking boot. Champions load the same defensive way. This is the moat's
+compounding mechanism in code: a fork of the repo starts at
+`qgate.json`-absent (generation 0); a fork of the tenancy inherits the
+weights **and the champion genomes** its operators have trained.
 
 ### CLI
 
 ```
 decepticon-cli skillops retrain [--epochs N --lr F --l2 F --dry-run]
 decepticon-cli skillops evolve  [--top-k N --min-signals N --skill ID ... --seed N --dry-run]
+decepticon-cli skillops promote [--min-signals N --dry-run]
+decepticon-cli skillops grpo    [--group-size N --min-group N --dry-run]
 decepticon-cli skillops report
 ```
 
-All three take `--run-dir` (defaults to `$EVO_METACLAW_RUN_DIR` or
-`evo-metaclaw-run/`) and `--json`. `retrain` / `evolve` exit non-zero
-(no-op) when there was nothing to train on or no novel mutation — handy
-as a cron guard.
+All take `--run-dir` (defaults to `$EVO_METACLAW_RUN_DIR` or
+`evo-metaclaw-run/`) and `--json`. `retrain` / `evolve` / `promote` /
+`grpo` exit non-zero (no-op) when there was nothing to train on, no novel
+mutation, no eligible champion, or no exportable context — handy as a
+cron guard. A nightly job is just `retrain && evolve && promote && grpo`.
 
 ---
 

@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from decepticon.core.engagement_loop import EngagementLoop
 from decepticon.core.evo_metaclaw import (
     EvoMetaClaw,
     Genome,
@@ -22,12 +23,15 @@ from decepticon.core.evo_metaclaw import (
     Signal,
 )
 from decepticon.core.evo_skillops import (
+    Champion,
     EvoSkillOps,
     build_report,
     compute_fitness,
     evolve_population,
+    export_grpo,
     mutate_genome,
     retrain_qgate,
+    select_champions,
 )
 
 
@@ -315,3 +319,174 @@ class TestEvoSkillOpsFacade:
         evo = EvoMetaClaw(run_dir=tmp_path / "run")
         ops = EvoSkillOps.from_evo(evo)
         assert ops.store is evo.store
+
+
+class TestSelectChampions:
+    def test_picks_fittest_per_role(self) -> None:
+        sigs = _labelled_corpus()
+        genomes = [
+            Genome("good", "recon", ("a", "b"), "ph"),
+            Genome("bad", "recon", ("brute",), "ph2"),
+        ]
+        champs = select_champions(genomes, sigs, QGate(), min_signals=3)
+        assert set(champs) == {"recon"}
+        assert champs["recon"].genome.genome_id == "good"
+        assert champs["recon"].n_signals == 30
+
+    def test_min_signals_gate(self) -> None:
+        genomes = [Genome("good", "recon", ("a",), "ph")]
+        sigs = [_sig(genome_id="good") for _ in range(2)]
+        assert select_champions(genomes, sigs, min_signals=5) == {}
+
+    def test_one_champion_per_role(self) -> None:
+        genomes = [
+            Genome("r1", "recon", ("a",), "p1"),
+            Genome("r2", "recon", ("b",), "p2"),
+            Genome("e1", "exploit", ("c",), "p3"),
+        ]
+        sigs = [_sig(genome_id="r1", role="recon", reward=1.0) for _ in range(4)]
+        sigs += [_sig(genome_id="r2", role="recon", reward=9.0) for _ in range(4)]
+        sigs += [_sig(genome_id="e1", role="exploit", reward=2.0) for _ in range(4)]
+        champs = select_champions(genomes, sigs, QGate(), min_signals=3)
+        assert champs["recon"].genome.genome_id == "r2"  # higher reward wins
+        assert champs["exploit"].genome.genome_id == "e1"
+
+    def test_signals_without_lineage_are_skipped(self) -> None:
+        # A champion must be redeployable — no genome row, no champion.
+        champs = select_champions([], [_sig(genome_id="orphan") for _ in range(5)], QGate())
+        assert champs == {}
+
+
+class TestExportGrpo:
+    def test_groups_by_state_hash(self) -> None:
+        sigs = [
+            _sig(state_hash="s1", reward=1.0),
+            _sig(state_hash="s1", reward=3.0),
+            _sig(state_hash="s2", reward=5.0),
+            _sig(state_hash="s2", reward=5.0),
+        ]
+        rows = export_grpo(sigs)
+        assert len(rows) == 4
+        # Advantages within each context sum to ~0 (mean-centred).
+        by_ctx: dict[str, list[float]] = {}
+        for r in rows:
+            by_ctx.setdefault(r["state_hash"], []).append(r["advantage"])
+        for advs in by_ctx.values():
+            assert sum(advs) == pytest.approx(0.0, abs=1e-9)
+
+    def test_min_group_skips_thin_contexts(self) -> None:
+        sigs = [_sig(state_hash="lonely", reward=1.0)]
+        assert export_grpo(sigs, min_group=2) == []
+
+    def test_group_size_caps_tail(self) -> None:
+        sigs = [_sig(state_hash="s1", reward=float(i)) for i in range(10)]
+        rows = export_grpo(sigs, group_size=3)
+        assert len(rows) == 3
+        assert all(r["group_size"] == 3 for r in rows)
+        # Only the last three rewards (7, 8, 9) survive the cap.
+        assert sorted(r["reward"] for r in rows) == [7.0, 8.0, 9.0]
+
+    def test_identical_rewards_safe(self) -> None:
+        # std floored to 1.0 — no div-by-zero, advantages all 0.
+        rows = export_grpo([_sig(state_hash="s1", reward=2.0) for _ in range(3)])
+        assert all(r["advantage"] == 0.0 for r in rows)
+
+    def test_deterministic(self) -> None:
+        sigs = _labelled_corpus()
+        assert export_grpo(sigs) == export_grpo(sigs)
+
+
+class TestChampionRuntime:
+    def _promote(self, tmp_path: Path) -> GenomeStore:
+        store = GenomeStore(tmp_path / "run")
+        store.append_genome(Genome("good", "recon", ("a", "b"), "ph"))
+        for s in _labelled_corpus():
+            if s.genome_id == "good":
+                store.append_signal(s)
+        EvoSkillOps(store=store).promote(min_signals=3)
+        return store
+
+    def test_promote_persists_and_runtime_loads(self, tmp_path: Path) -> None:
+        self._promote(tmp_path)
+        evo = EvoMetaClaw(run_dir=tmp_path / "run")
+        champ = evo.champion("recon")
+        assert champ is not None
+        assert champ.genome_id == "good"
+        assert champ.skill_ids == ("a", "b")
+
+    def test_champion_absent_role_is_none(self, tmp_path: Path) -> None:
+        self._promote(tmp_path)
+        evo = EvoMetaClaw(run_dir=tmp_path / "run")
+        assert evo.champion("exploit") is None
+
+    def test_runtime_survives_corrupt_champions(self, tmp_path: Path) -> None:
+        run_dir = tmp_path / "run"
+        run_dir.mkdir(parents=True)
+        (run_dir / "champions.json").write_text("{ not json", encoding="utf-8")
+        evo = EvoMetaClaw(run_dir=run_dir)
+        assert evo.champion("recon") is None  # never raises
+
+    def test_malformed_champion_entry_is_none(self, tmp_path: Path) -> None:
+        run_dir = tmp_path / "run"
+        store = GenomeStore(run_dir)
+        store.save_champions({"recon": {"fitness": 1.0}})  # no "genome" key
+        evo = EvoMetaClaw(run_dir=run_dir)
+        assert evo.champion("recon") is None
+
+    def test_loop_prefers_champion(self, tmp_path: Path) -> None:
+        store = self._promote(tmp_path)
+        loop = EngagementLoop(evo=EvoMetaClaw(store=store))
+        picked = loop.propose("recon", ("cold",), "coldprompt", prefer_champion=True)
+        assert picked is not None
+        assert picked.genome_id == "good"
+
+    def test_loop_falls_back_when_no_champion(self, tmp_path: Path) -> None:
+        store = self._promote(tmp_path)
+        loop = EngagementLoop(evo=EvoMetaClaw(store=store))
+        picked = loop.propose("exploit", ("x",), "p", prefer_champion=True)
+        assert picked is not None
+        assert picked.genome_id != "good"  # cold proposal for the new role
+
+    def test_loop_ignores_champion_by_default(self, tmp_path: Path) -> None:
+        store = self._promote(tmp_path)
+        loop = EngagementLoop(evo=EvoMetaClaw(store=store))
+        picked = loop.propose("recon", ("cold",), "coldprompt")
+        assert picked is not None
+        assert picked.genome_id != "good"  # cold proposal, champion not consulted
+
+
+class TestFacadePromoteExport:
+    def test_promote_dry_run_does_not_write(self, tmp_path: Path) -> None:
+        store = GenomeStore(tmp_path / "run")
+        store.append_genome(Genome("good", "recon", ("a",), "ph"))
+        for s in _labelled_corpus():
+            if s.genome_id == "good":
+                store.append_signal(s)
+        champs = EvoSkillOps(store=store).promote(persist=False)
+        assert "recon" in champs
+        assert store.load_champions() == {}
+
+    def test_export_grpo_persists(self, tmp_path: Path) -> None:
+        store = GenomeStore(tmp_path / "run")
+        for s in _labelled_corpus():
+            store.append_signal(s)
+        rows = EvoSkillOps(store=store).export_grpo()
+        assert rows
+        assert store.grpo_path.exists()
+        written = store.grpo_path.read_text(encoding="utf-8").strip().splitlines()
+        assert len(written) == len(rows)
+
+    def test_export_grpo_dry_run(self, tmp_path: Path) -> None:
+        store = GenomeStore(tmp_path / "run")
+        for s in _labelled_corpus():
+            store.append_signal(s)
+        EvoSkillOps(store=store).export_grpo(persist=False)
+        assert not store.grpo_path.exists()
+
+    def test_champion_to_json_round_trip(self) -> None:
+        g = Genome("x", "recon", ("a", "b"), "ph", generation=2)
+        c = Champion(g, fitness=1.5, n_signals=7)
+        payload = c.to_json()
+        assert payload["genome"]["skill_ids"] == ["a", "b"]
+        assert payload["fitness"] == 1.5
+        assert payload["n_signals"] == 7
