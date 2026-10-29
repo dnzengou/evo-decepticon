@@ -138,3 +138,29 @@ def test_grpo_dry_run(tmp_path: Path, capsys) -> None:
     rc = skillops_main(["--run-dir", str(run_dir), "grpo", "--dry-run"])
     assert rc == EXIT_OK
     assert not (run_dir / "grpo.jsonl").exists()
+
+
+def test_nightly_runs_full_pass(tmp_path: Path, capsys) -> None:
+    run_dir = _seed_run_dir(tmp_path)
+    rc = skillops_main(["--run-dir", str(run_dir), "--json", "nightly", "--skill", "z"])
+    assert rc == EXIT_OK
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["retrain"]["trained"] is True
+    assert payload["n_champions"] == 1
+    assert payload["persisted"] is True
+    for name in ("qgate.json", "champions.json", "grpo.jsonl"):
+        assert (run_dir / name).exists()
+
+
+def test_nightly_dry_run(tmp_path: Path, capsys) -> None:
+    run_dir = _seed_run_dir(tmp_path)
+    rc = skillops_main(["--run-dir", str(run_dir), "nightly", "--dry-run"])
+    assert rc == EXIT_OK
+    out = capsys.readouterr().out
+    assert "dry-run" in out
+    assert not (run_dir / "qgate.json").exists()
+
+
+def test_nightly_empty_is_noop(tmp_path: Path, capsys) -> None:
+    rc = skillops_main(["--run-dir", str(tmp_path / "empty"), "nightly"])
+    assert rc == EXIT_NOOP

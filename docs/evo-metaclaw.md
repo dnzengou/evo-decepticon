@@ -162,6 +162,9 @@ Composed by the `EvoSkillOps` façade over a `GenomeStore`:
   role→champion map to `champions.json`.
 - `export_grpo()` — flatten the signal corpus into group-normalised GRPO
   rows (`grpo.jsonl`) for a downstream trainer.
+- `nightly()` — run the whole pass (`retrain` → `evolve` → `promote` →
+  `export_grpo` → `report`) and return a `NightlyResult` summary safe to
+  log. The one operation an operator crons.
 - `report()` — emit the fitness telemetry.
 
 ### Variation → selection → deployment
@@ -201,6 +204,7 @@ decepticon-cli skillops retrain [--epochs N --lr F --l2 F --dry-run]
 decepticon-cli skillops evolve  [--top-k N --min-signals N --skill ID ... --seed N --dry-run]
 decepticon-cli skillops promote [--min-signals N --dry-run]
 decepticon-cli skillops grpo    [--group-size N --min-group N --dry-run]
+decepticon-cli skillops nightly [--top-k N --min-signals N --skill ID ... --seed N --group-size N --dry-run]
 decepticon-cli skillops report
 ```
 
@@ -208,7 +212,17 @@ All take `--run-dir` (defaults to `$EVO_METACLAW_RUN_DIR` or
 `evo-metaclaw-run/`) and `--json`. `retrain` / `evolve` / `promote` /
 `grpo` exit non-zero (no-op) when there was nothing to train on, no novel
 mutation, no eligible champion, or no exportable context — handy as a
-cron guard. A nightly job is just `retrain && evolve && promote && grpo`.
+cron guard.
+
+`nightly` is the whole pass in one command — `retrain`, then `evolve`,
+`promote`, `grpo` in order (retrain first so the others score against the
+freshly persisted gate). It's the single line an operator crons on their
+tenancy, and exits non-zero only when the corpus yielded nothing at all:
+
+```cron
+# 03:17 nightly, inside the customer tenancy — signals never leave it
+17 3 * * *  cd /srv/engagements && decepticon-cli skillops nightly --json >> evo-nightly.log 2>&1
+```
 
 ---
 

@@ -25,6 +25,7 @@ from decepticon.core.evo_metaclaw import (
 from decepticon.core.evo_skillops import (
     Champion,
     EvoSkillOps,
+    NightlyResult,
     build_report,
     compute_fitness,
     evolve_population,
@@ -490,3 +491,58 @@ class TestFacadePromoteExport:
         assert payload["genome"]["skill_ids"] == ["a", "b"]
         assert payload["fitness"] == 1.5
         assert payload["n_signals"] == 7
+
+
+class TestNightly:
+    def _store(self, tmp_path: Path) -> GenomeStore:
+        store = GenomeStore(tmp_path / "run")
+        store.append_genome(Genome("good", "recon", ("a", "b"), "ph"))
+        store.append_genome(Genome("bad", "recon", ("brute",), "ph2"))
+        for s in _labelled_corpus():
+            store.append_signal(s)
+        return store
+
+    def test_runs_full_pass_and_persists(self, tmp_path: Path) -> None:
+        store = self._store(tmp_path)
+        result = EvoSkillOps(store=store).nightly(top_k=1, skill_catalog=["z"])
+        assert isinstance(result, NightlyResult)
+        assert result.retrain.trained is True
+        assert result.n_champions == 1
+        assert result.n_grpo_rows > 0
+        # Every artefact written.
+        for name in ("qgate.json", "champions.json", "grpo.jsonl"):
+            assert (store.run_dir / name).exists()
+
+    def test_retrain_runs_before_promote(self, tmp_path: Path) -> None:
+        # Champions must be scored with the freshly retrained gate, not the
+        # seed — so the persisted champion fitness reflects learned weights.
+        store = self._store(tmp_path)
+        ops = EvoSkillOps(store=store)
+        result = ops.nightly()
+        champ_fitness = result.report.top[0].fitness
+        # Re-score the champion with the persisted gate; must match.
+        regate = ops.load_gate()
+        assert regate.weights["reward"] != 1.0  # moved off seed
+        entries = compute_fitness(store.load_genomes(), store.load_signals(), regate)
+        assert entries[0].fitness == pytest.approx(champ_fitness)
+
+    def test_dry_run_writes_nothing(self, tmp_path: Path) -> None:
+        store = self._store(tmp_path)
+        EvoSkillOps(store=store).nightly(persist=False)
+        for name in ("qgate.json", "champions.json", "grpo.jsonl"):
+            assert not (store.run_dir / name).exists()
+
+    def test_empty_corpus_is_quiet(self, tmp_path: Path) -> None:
+        result = EvoSkillOps(store=GenomeStore(tmp_path / "run")).nightly()
+        assert result.retrain.trained is False
+        assert result.n_children == 0
+        assert result.n_champions == 0
+        assert result.n_grpo_rows == 0
+
+    def test_to_json_is_serialisable(self, tmp_path: Path) -> None:
+        result = EvoSkillOps(store=self._store(tmp_path)).nightly()
+        import json
+
+        payload = json.loads(json.dumps(result.to_json()))
+        assert payload["n_champions"] == 1
+        assert "report" in payload and "retrain" in payload

@@ -412,6 +412,26 @@ class Champion:
         }
 
 
+@dataclass(frozen=True)
+class NightlyResult:
+    """Summary of one full offline pass — retrain, evolve, promote, export."""
+
+    retrain: RetrainResult
+    n_children: int
+    n_champions: int
+    n_grpo_rows: int
+    report: FitnessReport
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "retrain": self.retrain.to_json(),
+            "n_children": self.n_children,
+            "n_champions": self.n_champions,
+            "n_grpo_rows": self.n_grpo_rows,
+            "report": self.report.to_json(),
+        }
+
+
 def select_champions(
     genomes: Sequence[Genome],
     signals: Sequence[Signal],
@@ -605,6 +625,42 @@ class EvoSkillOps:
             self.store.save_grpo(rows)
         return rows
 
+    def nightly(
+        self,
+        *,
+        top_k: int = _DEFAULT_TOP_K,
+        min_signals: int = _DEFAULT_MIN_SIGNALS,
+        skill_catalog: Sequence[str] | None = None,
+        seed: int = 0,
+        group_size: int | None = None,
+        persist: bool = True,
+    ) -> NightlyResult:
+        """Run the whole offline pass in order: retrain → evolve → promote
+        → GRPO export → report.
+
+        Retrain goes first so the freshly persisted gate is the one evolve
+        and promote score against — each step reloads it from disk. This is
+        the single operation an operator crons on their tenancy; the result
+        is a summary safe to log (aggregates, not raw signals).
+        """
+        retrain = self.retrain(persist=persist)
+        children = self.evolve(
+            top_k=top_k,
+            min_signals=min_signals,
+            skill_catalog=skill_catalog,
+            seed=seed,
+            persist=persist,
+        )
+        champions = self.promote(min_signals=min_signals, persist=persist)
+        grpo_rows = self.export_grpo(group_size=group_size, persist=persist)
+        return NightlyResult(
+            retrain=retrain,
+            n_children=len(children),
+            n_champions=len(champions),
+            n_grpo_rows=len(grpo_rows),
+            report=self.report(),
+        )
+
     @classmethod
     def from_evo(cls, evo: EvoMetaClaw) -> EvoSkillOps:
         """Build an ops façade over the same store a runtime instance uses."""
@@ -616,6 +672,7 @@ __all__ = [
     "EvoSkillOps",
     "FitnessEntry",
     "FitnessReport",
+    "NightlyResult",
     "RetrainResult",
     "build_report",
     "compute_fitness",

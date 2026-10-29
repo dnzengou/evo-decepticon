@@ -16,6 +16,17 @@ LangGraph, sandbox) keeps the always-on contract.
 
 ### Added
 
+- **EvoSkillOps `nightly` — the one-command offline pass.** The flywheel's
+  offline work was four separate commands (`retrain`, `evolve`, `promote`,
+  `grpo`). `EvoSkillOps.nightly()` and `decepticon-cli skillops nightly`
+  run them in the right order — retrain first, so evolve and promote score
+  against the freshly persisted gate — and return a `NightlyResult`
+  summary (retrain outcome + child/champion/GRPO-row counts + fitness
+  report) that is safe to log (aggregates, never a raw signal). It is the
+  single line an operator crons on their tenancy; `--dry-run` runs the
+  whole pass writing nothing, and it exits non-zero only when the corpus
+  yielded nothing at all. 8 new unit tests; see
+  [docs/evo-metaclaw.md](docs/evo-metaclaw.md).
 - **EvoMetaClaw selection loop + GRPO export.** EvoSkillOps could retrain
   the gate and *evolve* genomes, but nothing made the runtime use an
   evolved genome — variation with no selection. This closes it: (1)

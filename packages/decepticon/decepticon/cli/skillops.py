@@ -8,6 +8,7 @@ and never leaves that tenancy:
   evolve    Spawn mutated children of the fittest genomes.
   promote   Select + persist the champion genome per role (runtime picks it).
   grpo      Export the signal corpus as GRPO training rows (grpo.jsonl).
+  nightly   Run the full pass in order: retrain + evolve + promote + grpo.
   report    Print the billing-safe fitness telemetry (aggregates only).
 """
 
@@ -84,6 +85,27 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     grpo.add_argument(
         "--dry-run", action="store_true", help="Count rows without writing grpo.jsonl."
+    )
+
+    nightly = sub.add_parser(
+        "nightly", help="Run the full offline pass: retrain + evolve + promote + grpo."
+    )
+    nightly.add_argument("--top-k", type=int, default=3, help="How many fittest genomes spawn.")
+    nightly.add_argument(
+        "--min-signals", type=int, default=3, help="Min signals before a genome is eligible."
+    )
+    nightly.add_argument("--seed", type=int, default=0, help="RNG seed for reproducible mutation.")
+    nightly.add_argument("--group-size", type=int, default=None, help="GRPO per-context cap.")
+    nightly.add_argument(
+        "--skill",
+        action="append",
+        default=None,
+        dest="skill_catalog",
+        metavar="SKILL_ID",
+        help="A skill id mutation may add (repeatable).",
+    )
+    nightly.add_argument(
+        "--dry-run", action="store_true", help="Run the pass without writing any artefact."
     )
 
     sub.add_parser("report", help="Print billing-safe fitness telemetry.")
@@ -202,6 +224,33 @@ def _cmd_grpo(ops: EvoSkillOps, args: argparse.Namespace) -> int:
     return EXIT_OK if rows else EXIT_NOOP
 
 
+def _cmd_nightly(ops: EvoSkillOps, args: argparse.Namespace) -> int:
+    result = ops.nightly(
+        top_k=args.top_k,
+        min_signals=args.min_signals,
+        skill_catalog=args.skill_catalog,
+        seed=args.seed,
+        group_size=args.group_size,
+        persist=not args.dry_run,
+    )
+    payload = result.to_json()
+    payload["persisted"] = not args.dry_run
+    r = result.retrain
+    lines = [
+        f"nightly pass{' (dry-run)' if args.dry_run else ''}",
+        f"  retrain:    {'trained' if r.trained else 'no-op'} "
+        f"(n={r.n_signals}, acc={r.accuracy:.3f})",
+        f"  evolved:    {result.n_children} child genome(s)",
+        f"  promoted:   {result.n_champions} champion(s)",
+        f"  grpo rows:  {result.n_grpo_rows}",
+        f"  population: {result.report.n_genomes} genome(s), gen<={result.report.max_generation}",
+    ]
+    _emit(payload, as_json=args.json, text="\n".join(lines) + "\n")
+    # Non-zero only when there was nothing to do at all.
+    did_something = r.trained or result.n_children or result.n_champions or result.n_grpo_rows
+    return EXIT_OK if did_something else EXIT_NOOP
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     ops = EvoSkillOps(store=GenomeStore(args.run_dir))
@@ -213,6 +262,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_promote(ops, args)
     if args.command == "grpo":
         return _cmd_grpo(ops, args)
+    if args.command == "nightly":
+        return _cmd_nightly(ops, args)
     if args.command == "report":
         return _cmd_report(ops, args)
     print(f"unknown skillops subcommand: {args.command}", file=sys.stderr)
