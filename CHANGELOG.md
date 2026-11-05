@@ -16,6 +16,24 @@ LangGraph, sandbox) keeps the always-on contract.
 
 ### Added
 
+- **EvoMetaClaw retrain-freshness alarm (`EvoSkillOps.freshness()`,
+  `decepticon-cli skillops status`).** The moat doc named a
+  static-registry regression — a silently-dead retrain job freezes the
+  Q-gate on an old generation while signals pile up and the moat quietly
+  stops compounding — and promised an "alarm on retrain freshness" with
+  no code behind it. Now `retrain` stamps a `trained_at` timestamp into
+  `qgate.json`, and `check_freshness` / the new `skillops status`
+  subcommand classify the persisted gate against its corpus as
+  `never_trained` / `fresh` / `stale`: stale by age (older than
+  `--max-age-hours`, *with* new signals waiting) or by backlog (at least
+  `--max-new-signals` since the last retrain). It exits `3` when stale
+  (or when signals exist but no retrain ever ran) so a nightly
+  `skillops retrain && skillops status` chain alarms a cron the moment
+  the flywheel stalls; a quiet period with no new signals is
+  deliberately not an alarm. Reading a corrupt weights file degrades to
+  `never_trained` rather than raising — the alarm can never itself break
+  the nightly job. 12 new unit tests; see
+  [docs/evo-metaclaw.md](docs/evo-metaclaw.md).
 - **EvoSkillOps — the offline half of the EvoMetaClaw flywheel
   (`decepticon/core/evo_skillops.py`, `decepticon-cli skillops`).** The
   runtime half only ever *scored* genomes and appended signals; the

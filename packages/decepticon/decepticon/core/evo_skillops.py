@@ -34,6 +34,7 @@ from __future__ import annotations
 import logging
 import math
 import random
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -65,6 +66,15 @@ _DEFAULT_L2 = 1e-3
 # has enough signals that its fitness is not a single lucky turn.
 _DEFAULT_TOP_K = 3
 _DEFAULT_MIN_SIGNALS = 3
+
+# Freshness defaults — the "alarm on retrain freshness" mitigation for
+# static-registry regression (docs/evo-metaclaw.md). A nightly job gives
+# the gate ~24h between retrains; 36h leaves slack for one missed run
+# before the moat is declared frozen. The backlog guard fires when enough
+# new signals have piled up unretrained that the policy is demonstrably
+# behind its corpus, regardless of elapsed time.
+_DEFAULT_MAX_AGE_S = 36 * 3600.0
+_DEFAULT_MAX_NEW_SIGNALS = 50
 
 
 def _sigmoid(z: float) -> float:
@@ -396,6 +406,113 @@ def build_report(
     )
 
 
+@dataclass(frozen=True)
+class FreshnessStatus:
+    """Whether the persisted Q-gate is keeping up with the signal corpus.
+
+    The moat compounds only while the offline retrain job keeps turning
+    new trajectory data into new weights. If that job dies silently the
+    gate freezes on an old generation while signals pile up — the
+    static-registry regression the docs warn about. This is the
+    machine-readable alarm: ``is_stale`` is the one bit a cron guard
+    needs, ``reasons`` is for the operator.
+    """
+
+    state: str  # "never_trained" | "fresh" | "stale"
+    is_stale: bool
+    reasons: list[str]
+    trained_at: float | None
+    age_s: float | None
+    n_signals_total: int
+    n_signals_since_train: int
+    latest_signal_ts: float | None
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "state": self.state,
+            "is_stale": self.is_stale,
+            "reasons": list(self.reasons),
+            "trained_at": self.trained_at,
+            "age_s": self.age_s,
+            "n_signals_total": self.n_signals_total,
+            "n_signals_since_train": self.n_signals_since_train,
+            "latest_signal_ts": self.latest_signal_ts,
+        }
+
+
+def check_freshness(
+    weights_payload: dict[str, Any] | None,
+    signals: Sequence[Signal],
+    *,
+    now: float,
+    max_age_s: float = _DEFAULT_MAX_AGE_S,
+    max_new_signals: int = _DEFAULT_MAX_NEW_SIGNALS,
+) -> FreshnessStatus:
+    """Classify the persisted gate against the corpus it should reflect.
+
+    ``weights_payload`` is what :meth:`GenomeStore.load_weights` returns
+    (``None`` when no retrain has ever persisted). Three outcomes:
+
+    - **never_trained** — no persisted weights. Benign (not stale) when
+      there are no signals to train on yet (a genuine generation-0 run);
+      an alarm once signals exist but the gate is still on the seed
+      policy, because the moat isn't compounding.
+    - **stale** — weights exist but are behind their corpus, either by
+      *age* (older than ``max_age_s`` while new signals have arrived) or
+      by *backlog* (at least ``max_new_signals`` signals recorded since
+      the last retrain). Age alone with no new signals is **not** stale:
+      retraining on an unchanged corpus would learn nothing, so a quiet
+      period is not a frozen moat.
+    - **fresh** — weights exist and neither alarm fires.
+    """
+    n_total = len(signals)
+    latest_ts = max((s.ts for s in signals), default=None)
+    trained_at = weights_payload.get("trained_at") if weights_payload else None
+
+    if trained_at is None:
+        stale = n_total > 0
+        reason = (
+            f"{n_total} signal(s) recorded but the Q-gate has never been "
+            "retrained — still on the seed policy"
+            if stale
+            else "no retrain yet and no signals to train on (generation 0)"
+        )
+        return FreshnessStatus(
+            state="never_trained",
+            is_stale=stale,
+            reasons=[reason],
+            trained_at=None,
+            age_s=None,
+            n_signals_total=n_total,
+            n_signals_since_train=n_total,
+            latest_signal_ts=latest_ts,
+        )
+
+    age_s = now - trained_at
+    n_since = sum(1 for s in signals if s.ts > trained_at)
+    reasons: list[str] = []
+    if n_since > 0 and age_s > max_age_s:
+        reasons.append(
+            f"last retrain was {age_s / 3600.0:.1f}h ago "
+            f"(> {max_age_s / 3600.0:.1f}h) with {n_since} new signal(s) waiting"
+        )
+    if n_since >= max_new_signals:
+        reasons.append(
+            f"{n_since} signal(s) recorded since the last retrain (>= {max_new_signals})"
+        )
+    is_stale = bool(reasons)
+    return FreshnessStatus(
+        state="stale" if is_stale else "fresh",
+        is_stale=is_stale,
+        reasons=reasons or ["gate is current with the signal corpus"],
+        trained_at=trained_at,
+        age_s=age_s,
+        n_signals_total=n_total,
+        n_signals_since_train=n_since,
+        latest_signal_ts=latest_ts,
+    )
+
+
 class EvoSkillOps:
     """Offline-ops façade: retrain the gate, evolve the population, report.
 
@@ -479,6 +596,34 @@ class EvoSkillOps:
             top_n=top_n,
         )
 
+    def freshness(
+        self,
+        *,
+        now: float | None = None,
+        max_age_s: float = _DEFAULT_MAX_AGE_S,
+        max_new_signals: int = _DEFAULT_MAX_NEW_SIGNALS,
+    ) -> FreshnessStatus:
+        """Report whether the persisted gate is keeping up with the corpus.
+
+        Reads the weights payload (not just the gate) so it can see the
+        ``trained_at`` stamp, and the signal log so it can count the
+        backlog. ``now`` defaults to wall-clock time; inject it in tests.
+        A corrupt weights file is treated as *never trained* rather than
+        raising — the alarm must never itself break the nightly job.
+        """
+        try:
+            payload = self.store.load_weights()
+        except Exception:
+            log.exception("evo_skillops: weights file unreadable; treating as never-trained")
+            payload = None
+        return check_freshness(
+            payload,
+            self.store.load_signals(),
+            now=time.time() if now is None else now,
+            max_age_s=max_age_s,
+            max_new_signals=max_new_signals,
+        )
+
     @classmethod
     def from_evo(cls, evo: EvoMetaClaw) -> EvoSkillOps:
         """Build an ops façade over the same store a runtime instance uses."""
@@ -489,8 +634,10 @@ __all__ = [
     "EvoSkillOps",
     "FitnessEntry",
     "FitnessReport",
+    "FreshnessStatus",
     "RetrainResult",
     "build_report",
+    "check_freshness",
     "compute_fitness",
     "evolve_population",
     "mutate_genome",
