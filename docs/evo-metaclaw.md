@@ -95,7 +95,15 @@ The moat is real but not indestructible. Defend it against:
 - **Static-registry regression.** If the retrain job fails silently
   and the Q-gate freezes on generation N for months, the moat stops
   compounding. Mitigations: alarm on retrain freshness, expose
-  `generation` in the dashboard.
+  `generation` in the dashboard. *Implemented* as
+  `EvoSkillOps.freshness()` / `decepticon-cli skillops status` — it
+  reads the `trained_at` stamp `retrain` writes into `qgate.json` and
+  the signal backlog, and exits non-zero (an alarm a cron can catch)
+  when the gate is behind its corpus: either stale by age (older than
+  `--max-age-hours` *with new signals waiting*) or by backlog (at least
+  `--max-new-signals` signals since the last retrain). A quiet period
+  with no new signals is deliberately **not** an alarm — retraining on
+  an unchanged corpus learns nothing.
 
 ---
 
@@ -149,6 +157,7 @@ population. Also stdlib-only.
 | `compute_fitness`    | Rank genomes by mean Q-gate score — reward *net of* token/wallclock cost, so a genome that wins cheaply outranks one that wins the same reward by burning the budget. |
 | `evolve_population`  | Select the top-k eligible genomes (gated by a minimum signal count so one lucky turn can't seed a generation) and spawn skill-mutated children — drop / add / swap a skill — wiring `parent_id` + `generation` so lineage compounds. |
 | `build_report`       | Aggregate the corpus into the billing-safe telemetry (`generation`, `signal_count`, fitness histogram). Aggregates only — never a raw signal. |
+| `check_freshness`    | Classify the persisted gate against the corpus it should reflect — `never_trained` / `fresh` / `stale` with human-readable reasons — so a silently-dead retrain job (the static-registry regression) raises an alarm instead of freezing the moat unnoticed. |
 
 Composed by the `EvoSkillOps` façade over a `GenomeStore`:
 
@@ -206,6 +215,7 @@ decepticon-cli skillops promote [--min-signals N --dry-run]
 decepticon-cli skillops grpo    [--group-size N --min-group N --dry-run]
 decepticon-cli skillops nightly [--top-k N --min-signals N --skill ID ... --seed N --group-size N --dry-run]
 decepticon-cli skillops report
+decepticon-cli skillops status  [--max-age-hours H --max-new-signals N]
 ```
 
 All take `--run-dir` (defaults to `$EVO_METACLAW_RUN_DIR` or
@@ -223,6 +233,14 @@ tenancy, and exits non-zero only when the corpus yielded nothing at all:
 # 03:17 nightly, inside the customer tenancy — signals never leave it
 17 3 * * *  cd /srv/engagements && decepticon-cli skillops nightly --json >> evo-nightly.log 2>&1
 ```
+All four take `--run-dir` (defaults to `$EVO_METACLAW_RUN_DIR` or
+`evo-metaclaw-run/`) and `--json`. `retrain` / `evolve` exit non-zero
+(no-op) when there was nothing to train on or no novel mutation — handy
+as a cron guard. `status` is the freshness alarm: exit `0` when the gate
+is fresh (or a genuine generation-0 run with no signals yet), exit `3`
+when it is stale or when signals exist but no retrain ever ran — so a
+nightly `skillops retrain && skillops status` chain pages an operator the
+moment the moat stops compounding.
 
 ---
 

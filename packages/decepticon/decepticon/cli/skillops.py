@@ -10,6 +10,7 @@ and never leaves that tenancy:
   grpo      Export the signal corpus as GRPO training rows (grpo.jsonl).
   nightly   Run the full pass in order: retrain + evolve + promote + grpo.
   report    Print the billing-safe fitness telemetry (aggregates only).
+  status    Alarm if the persisted Q-gate has fallen behind its corpus.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from decepticon.core.evo_skillops import EvoSkillOps
 EXIT_OK = 0
 EXIT_NOOP = 1
 EXIT_CONFIG = 2
+EXIT_STALE = 3
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -109,6 +111,22 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     sub.add_parser("report", help="Print billing-safe fitness telemetry.")
+
+    status = sub.add_parser(
+        "status", help="Alarm if the persisted Q-gate has fallen behind its corpus."
+    )
+    status.add_argument(
+        "--max-age-hours",
+        type=float,
+        default=36.0,
+        help="Alarm when the last retrain is older than this (with new signals waiting).",
+    )
+    status.add_argument(
+        "--max-new-signals",
+        type=int,
+        default=50,
+        help="Alarm when at least this many signals arrived since the last retrain.",
+    )
     return p
 
 
@@ -249,6 +267,23 @@ def _cmd_nightly(ops: EvoSkillOps, args: argparse.Namespace) -> int:
     # Non-zero only when there was nothing to do at all.
     did_something = r.trained or result.n_children or result.n_champions or result.n_grpo_rows
     return EXIT_OK if did_something else EXIT_NOOP
+def _cmd_status(ops: EvoSkillOps, args: argparse.Namespace) -> int:
+    status = ops.freshness(
+        max_age_s=args.max_age_hours * 3600.0,
+        max_new_signals=args.max_new_signals,
+    )
+    payload = status.to_json()
+    age = "never" if status.age_s is None else f"{status.age_s / 3600.0:.1f}h"
+    lines = [
+        f"gate freshness: {status.state.upper()}{' (STALE)' if status.is_stale else ''}",
+        f"  last retrain:        {age} ago",
+        f"  signals total:       {status.n_signals_total}",
+        f"  signals since train: {status.n_signals_since_train}",
+        "  reasons:",
+    ]
+    lines.extend(f"    - {r}" for r in status.reasons)
+    _emit(payload, as_json=args.json, text="\n".join(lines) + "\n")
+    return EXIT_STALE if status.is_stale else EXIT_OK
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -266,6 +301,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_nightly(ops, args)
     if args.command == "report":
         return _cmd_report(ops, args)
+    if args.command == "status":
+        return _cmd_status(ops, args)
     print(f"unknown skillops subcommand: {args.command}", file=sys.stderr)
     return EXIT_CONFIG
 

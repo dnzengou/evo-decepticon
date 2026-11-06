@@ -27,6 +27,7 @@ from decepticon.core.evo_skillops import (
     EvoSkillOps,
     NightlyResult,
     build_report,
+    check_freshness,
     compute_fitness,
     evolve_population,
     export_grpo,
@@ -546,3 +547,92 @@ class TestNightly:
         payload = json.loads(json.dumps(result.to_json()))
         assert payload["n_champions"] == 1
         assert "report" in payload and "retrain" in payload
+_HOUR = 3600.0
+
+
+class TestCheckFreshness:
+    def test_never_trained_no_signals_is_benign(self) -> None:
+        # A genuine generation-0 run: no weights, nothing to train on.
+        status = check_freshness(None, [], now=1000.0)
+        assert status.state == "never_trained"
+        assert status.is_stale is False
+        assert status.n_signals_total == 0
+
+    def test_never_trained_with_signals_alarms(self) -> None:
+        # Signals exist but the gate is still on the seed policy — the
+        # moat is not compounding.
+        sigs = [_sig(ts=10.0), _sig(ts=20.0)]
+        status = check_freshness(None, sigs, now=1000.0)
+        assert status.state == "never_trained"
+        assert status.is_stale is True
+        assert status.n_signals_since_train == 2
+
+    def test_fresh_when_recent_and_no_backlog(self) -> None:
+        payload = {"weights": {}, "threshold": 0.0, "trained_at": 1000.0}
+        sigs = [_sig(ts=500.0), _sig(ts=900.0)]  # all predate the retrain
+        status = check_freshness(payload, sigs, now=1000.0 + _HOUR)
+        assert status.state == "fresh"
+        assert status.is_stale is False
+        assert status.n_signals_since_train == 0
+        assert status.age_s == pytest.approx(_HOUR)
+
+    def test_stale_by_age_requires_new_signals(self) -> None:
+        payload = {"trained_at": 0.0}
+        # One new signal after the retrain, and it's been well past max age.
+        sigs = [_sig(ts=10.0)]
+        now = 50 * _HOUR
+        fresh = check_freshness(payload, [], now=now, max_age_s=36 * _HOUR)
+        stale = check_freshness(payload, sigs, now=now, max_age_s=36 * _HOUR)
+        # No new signals → quiet period, not stale, even though it's old.
+        assert fresh.is_stale is False
+        # New signal + past max age → stale.
+        assert stale.is_stale is True
+        assert any("ago" in r for r in stale.reasons)
+
+    def test_stale_by_backlog(self) -> None:
+        payload = {"trained_at": 0.0}
+        sigs = [_sig(ts=float(i + 1)) for i in range(5)]
+        now = 1 * _HOUR  # well within max age
+        status = check_freshness(payload, sigs, now=now, max_new_signals=5)
+        assert status.is_stale is True
+        assert status.n_signals_since_train == 5
+        assert any("since the last retrain" in r for r in status.reasons)
+
+    def test_signals_since_train_counts_strictly_after(self) -> None:
+        payload = {"trained_at": 100.0}
+        sigs = [_sig(ts=100.0), _sig(ts=101.0), _sig(ts=50.0)]
+        status = check_freshness(payload, sigs, now=200.0)
+        # ts == trained_at is not "since"; only ts > trained_at counts.
+        assert status.n_signals_since_train == 1
+
+
+class TestEvoSkillOpsFreshness:
+    def test_round_trip_stamps_and_reads_fresh(self, tmp_path: Path) -> None:
+        store = GenomeStore(tmp_path / "run")
+        for s in _labelled_corpus():
+            store.append_signal(s)
+        ops = EvoSkillOps(store=store)
+        result = ops.retrain()  # persists weights with a trained_at stamp
+        assert result.trained is True
+        status = ops.freshness()
+        assert status.trained_at is not None
+        # All corpus signals have ts=0.0 (predate the just-now retrain), so
+        # there is no backlog and the gate is fresh.
+        assert status.is_stale is False
+        assert status.state == "fresh"
+
+    def test_never_trained_facade(self, tmp_path: Path) -> None:
+        store = GenomeStore(tmp_path / "run")
+        for s in _labelled_corpus():
+            store.append_signal(s)
+        status = EvoSkillOps(store=store).freshness()
+        assert status.state == "never_trained"
+        assert status.is_stale is True
+
+    def test_corrupt_weights_treated_as_never_trained(self, tmp_path: Path) -> None:
+        run_dir = tmp_path / "run"
+        run_dir.mkdir(parents=True)
+        (run_dir / "qgate.json").write_text("{ not json", encoding="utf-8")
+        # Must not raise — the alarm can never itself break the nightly job.
+        status = EvoSkillOps(run_dir=run_dir).freshness()
+        assert status.state == "never_trained"

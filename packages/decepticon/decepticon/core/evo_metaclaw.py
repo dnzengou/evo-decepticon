@@ -275,11 +275,25 @@ class GenomeStore:
         return list(by_id.values())
 
     def save_weights(
-        self, weights: dict[str, float], threshold: float, meta: dict[str, Any] | None = None
+        self,
+        weights: dict[str, float],
+        threshold: float,
+        meta: dict[str, Any] | None = None,
+        trained_at: float | None = None,
     ) -> None:
         """Persist retrained Q-gate weights atomically (write-then-rename)
-        so a concurrent runtime read never sees a half-written file."""
-        payload: dict[str, Any] = {"weights": weights, "threshold": threshold}
+        so a concurrent runtime read never sees a half-written file.
+
+        ``trained_at`` (epoch seconds, defaulting to now) is stamped into
+        the payload so the offline freshness check can tell how long the
+        Q-gate has been frozen without trusting the file's mtime — the
+        "alarm on retrain freshness" mitigation for static-registry
+        regression (see docs/evo-metaclaw.md)."""
+        payload: dict[str, Any] = {
+            "weights": weights,
+            "threshold": threshold,
+            "trained_at": time.time() if trained_at is None else trained_at,
+        }
         if meta:
             payload["meta"] = meta
         tmp = self.weights_path.with_suffix(".json.tmp")
