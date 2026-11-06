@@ -1,0 +1,9 @@
+# Decepticon interactive demos — crawling and AI agents welcome.
+# Note: on GitHub project pages the authoritative robots.txt is served from
+# the domain root (https://dnzengou.github.io/robots.txt), not this path.
+# This file documents intent and becomes authoritative under a custom domain.
+
+User-agent: *
+Allow: /
+
+Sitemap: https://dnzengou.github.io/evo-decepticon/sitemap.xml

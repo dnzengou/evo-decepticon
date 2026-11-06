@@ -1,0 +1,25 @@
+# Decepticon — Interactive Security Auditor Demos
+
+> Zero-install, offline-safe browser demos of Decepticon's specialist security
+> auditors. Every check runs entirely client-side against synthetic inputs —
+> no signup, no server, and no data leaves the browser.
+
+Decepticon is an agentic security platform. These demos let you try two
+specialist auditors in the browser before installing the full stack. They are
+intentionally self-contained (hardened Content-Security-Policy, no network
+calls) so they are safe to open from `file://` or over HTTPS.
+
+## Interactive demos
+
+- [GNSS Auditor](https://dnzengou.github.io/evo-decepticon/gnss_auditor_ui.html): Post-quantum GNSS/OSNMA signal audits. Runs three checks client-side — Grover-gap TESLA MAC margin, root-signature quantum readiness (RSA / ECDSA / Dilithium / Falcon), and receiver jam/spoof walk-off versus envelope with and without OSNMA.
+- [Crypto HW Auditor](https://dnzengou.github.io/evo-decepticon/wallet_auditor_ui.html): Hardware wallet RNG and firmware forensics, built in response to the 2026 Coldcard incident. Score RNG samples for weak entropy, calculate BIP39 seed strength, and check firmware versions against known-vulnerable ranges.
+
+## Command-line demos
+
+- [GNSS PQC CLI demo](https://github.com/dnzengou/evo-decepticon/blob/main/demo/gnss_pqc_demo.py): Emits three HIGH-severity GNSS findings in under a second, stdlib-only.
+- [Wallet RNG CLI demo](https://github.com/dnzengou/evo-decepticon/blob/main/demo/wallet_rng_demo.py): Emits three hardware-wallet RNG findings in under a second, stdlib-only.
+
+## About
+
+- [Project repository](https://github.com/dnzengou/evo-decepticon): Source, documentation, and the full Decepticon stack.
+- [Demo overview](https://github.com/dnzengou/evo-decepticon/blob/main/demo/README.md): How the browser and CLI demos work.
