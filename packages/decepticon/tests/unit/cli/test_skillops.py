@@ -7,7 +7,7 @@ import random
 from pathlib import Path
 
 from decepticon.cli.__main__ import main as cli_main
-from decepticon.cli.skillops import EXIT_NOOP, EXIT_OK
+from decepticon.cli.skillops import EXIT_NOOP, EXIT_OK, EXIT_STALE
 from decepticon.cli.skillops import main as skillops_main
 from decepticon.core.evo_metaclaw import Genome, GenomeStore, Signal
 
@@ -98,3 +98,37 @@ def test_dispatch_through_main(tmp_path: Path, capsys) -> None:
     rc = cli_main(["skillops", "--run-dir", str(run_dir), "report"])
     assert rc == EXIT_OK
     assert "fitness report" in capsys.readouterr().out
+
+
+def test_status_fresh_after_retrain(tmp_path: Path, capsys) -> None:
+    run_dir = _seed_run_dir(tmp_path)
+    assert skillops_main(["--run-dir", str(run_dir), "retrain"]) == EXIT_OK
+    capsys.readouterr()  # drain
+    rc = skillops_main(["--run-dir", str(run_dir), "status"])
+    assert rc == EXIT_OK
+    assert "FRESH" in capsys.readouterr().out
+
+
+def test_status_never_trained_alarms(tmp_path: Path, capsys) -> None:
+    run_dir = _seed_run_dir(tmp_path)  # signals but no qgate.json
+    rc = skillops_main(["--run-dir", str(run_dir), "status"])
+    assert rc == EXIT_STALE
+    assert "NEVER_TRAINED" in capsys.readouterr().out
+
+
+def test_status_backlog_alarms_json(tmp_path: Path, capsys) -> None:
+    run_dir = _seed_run_dir(tmp_path)
+    assert skillops_main(["--run-dir", str(run_dir), "retrain"]) == EXIT_OK
+    capsys.readouterr()
+    # One more signal arrives after the retrain; a max-new-signals of 1 trips.
+    GenomeStore(run_dir).append_signal(
+        Signal("good", "recon", "s0", "nmap", 5.0, 100, 0.5, True, ts=9e18)
+    )
+    rc = skillops_main(
+        ["--run-dir", str(run_dir), "--json", "status", "--max-new-signals", "1"]
+    )
+    assert rc == EXIT_STALE
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["is_stale"] is True
+    assert payload["state"] == "stale"
+    assert payload["n_signals_since_train"] >= 1
