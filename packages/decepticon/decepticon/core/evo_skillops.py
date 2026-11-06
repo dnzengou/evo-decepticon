@@ -407,6 +407,114 @@ def build_report(
 
 
 @dataclass(frozen=True)
+class Champion:
+    """The fittest proven genome for one role — the runtime's default pick."""
+
+    genome: Genome
+    fitness: float
+    n_signals: int
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "genome": self.genome.to_json(),
+            "fitness": self.fitness,
+            "n_signals": self.n_signals,
+        }
+
+
+@dataclass(frozen=True)
+class NightlyResult:
+    """Summary of one full offline pass — retrain, evolve, promote, export."""
+
+    retrain: RetrainResult
+    n_children: int
+    n_champions: int
+    n_grpo_rows: int
+    report: FitnessReport
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "retrain": self.retrain.to_json(),
+            "n_children": self.n_children,
+            "n_champions": self.n_champions,
+            "n_grpo_rows": self.n_grpo_rows,
+            "report": self.report.to_json(),
+        }
+
+
+def select_champions(
+    genomes: Sequence[Genome],
+    signals: Sequence[Signal],
+    gate: QGate | None = None,
+    *,
+    min_signals: int = _DEFAULT_MIN_SIGNALS,
+) -> dict[str, Champion]:
+    """Pick the fittest eligible genome per role.
+
+    Eligibility mirrors evolution's: a genome must have at least
+    ``min_signals`` recorded turns and a lineage row we can rebuild (the
+    runtime needs its skills + prompt hash to redeploy it). Roles with no
+    eligible genome are simply absent — the runtime proposes cold for them.
+    """
+    by_id = {g.genome_id: g for g in genomes}
+    champions: dict[str, Champion] = {}
+    for entry in compute_fitness(genomes, signals, gate):
+        if entry.n_signals < min_signals:
+            continue
+        genome = by_id.get(entry.genome_id)
+        if genome is None:
+            continue
+        # compute_fitness is sorted fittest-first, so the first eligible
+        # genome seen for a role is its champion.
+        if entry.role not in champions:
+            champions[entry.role] = Champion(genome, entry.fitness, entry.n_signals)
+    return champions
+
+
+def export_grpo(
+    signals: Sequence[Signal],
+    *,
+    group_size: int | None = None,
+    min_group: int = 2,
+) -> list[dict[str, Any]]:
+    """Flatten the signal corpus into GRPO training rows.
+
+    Groups signals by ``state_hash`` — the GRPO ideal of comparing actions
+    taken from the same context — and emits one row per signal with the
+    group-normalised advantage ``(reward - mean) / std``. Contexts with
+    fewer than ``min_group`` signals are skipped (no meaningful spread to
+    normalise against); ``group_size`` optionally caps each group to its
+    most recent N signals. Rows are ordered by context then insertion, so
+    a given corpus always exports identically.
+    """
+    by_state: dict[str, list[Signal]] = {}
+    for s in signals:
+        by_state.setdefault(s.state_hash, []).append(s)
+
+    rows: list[dict[str, Any]] = []
+    for state_hash in sorted(by_state):
+        group = by_state[state_hash]
+        if group_size is not None:
+            group = group[-group_size:]
+        if len(group) < min_group:
+            continue
+        rewards = [s.reward for s in group]
+        mean = sum(rewards) / len(rewards)
+        var = sum((r - mean) ** 2 for r in rewards) / len(rewards)
+        std = var**0.5 or 1.0
+        for s in group:
+            rows.append(
+                {
+                    "state_hash": state_hash,
+                    "genome_id": s.genome_id,
+                    "role": s.role,
+                    "action": s.action,
+                    "reward": s.reward,
+                    "advantage": (s.reward - mean) / std,
+                    "group_size": len(group),
+                }
+            )
+    return rows
 class FreshnessStatus:
     """Whether the persisted Q-gate is keeping up with the signal corpus.
 
@@ -596,6 +704,75 @@ class EvoSkillOps:
             top_n=top_n,
         )
 
+    def promote(
+        self,
+        *,
+        min_signals: int = _DEFAULT_MIN_SIGNALS,
+        persist: bool = True,
+    ) -> dict[str, Champion]:
+        """Select the champion genome per role; persist the map for runtime.
+
+        This is the deployment arm: once a genome has proven itself over the
+        corpus, write it to ``champions.json`` so the next engagement reaches
+        for it instead of a cold proposal.
+        """
+        champions = select_champions(
+            self.store.load_genomes(),
+            self.store.load_signals(),
+            gate=self.load_gate(),
+            min_signals=min_signals,
+        )
+        if persist and champions:
+            self.store.save_champions({r: c.to_json() for r, c in champions.items()})
+        return champions
+
+    def export_grpo(
+        self,
+        *,
+        group_size: int | None = None,
+        min_group: int = 2,
+        persist: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Export the signal corpus as GRPO training rows; write grpo.jsonl."""
+        rows = export_grpo(self.store.load_signals(), group_size=group_size, min_group=min_group)
+        if persist and rows:
+            self.store.save_grpo(rows)
+        return rows
+
+    def nightly(
+        self,
+        *,
+        top_k: int = _DEFAULT_TOP_K,
+        min_signals: int = _DEFAULT_MIN_SIGNALS,
+        skill_catalog: Sequence[str] | None = None,
+        seed: int = 0,
+        group_size: int | None = None,
+        persist: bool = True,
+    ) -> NightlyResult:
+        """Run the whole offline pass in order: retrain → evolve → promote
+        → GRPO export → report.
+
+        Retrain goes first so the freshly persisted gate is the one evolve
+        and promote score against — each step reloads it from disk. This is
+        the single operation an operator crons on their tenancy; the result
+        is a summary safe to log (aggregates, not raw signals).
+        """
+        retrain = self.retrain(persist=persist)
+        children = self.evolve(
+            top_k=top_k,
+            min_signals=min_signals,
+            skill_catalog=skill_catalog,
+            seed=seed,
+            persist=persist,
+        )
+        champions = self.promote(min_signals=min_signals, persist=persist)
+        grpo_rows = self.export_grpo(group_size=group_size, persist=persist)
+        return NightlyResult(
+            retrain=retrain,
+            n_children=len(children),
+            n_champions=len(champions),
+            n_grpo_rows=len(grpo_rows),
+            report=self.report(),
     def freshness(
         self,
         *,
@@ -631,15 +808,19 @@ class EvoSkillOps:
 
 
 __all__ = [
+    "Champion",
     "EvoSkillOps",
     "FitnessEntry",
     "FitnessReport",
+    "NightlyResult",
     "FreshnessStatus",
     "RetrainResult",
     "build_report",
     "check_freshness",
     "compute_fitness",
     "evolve_population",
+    "export_grpo",
     "mutate_genome",
     "retrain_qgate",
+    "select_champions",
 ]

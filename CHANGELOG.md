@@ -16,6 +16,35 @@ LangGraph, sandbox) keeps the always-on contract.
 
 ### Added
 
+- **EvoSkillOps `nightly` — the one-command offline pass.** The flywheel's
+  offline work was four separate commands (`retrain`, `evolve`, `promote`,
+  `grpo`). `EvoSkillOps.nightly()` and `decepticon-cli skillops nightly`
+  run them in the right order — retrain first, so evolve and promote score
+  against the freshly persisted gate — and return a `NightlyResult`
+  summary (retrain outcome + child/champion/GRPO-row counts + fitness
+  report) that is safe to log (aggregates, never a raw signal). It is the
+  single line an operator crons on their tenancy; `--dry-run` runs the
+  whole pass writing nothing, and it exits non-zero only when the corpus
+  yielded nothing at all. 8 new unit tests; see
+  [docs/evo-metaclaw.md](docs/evo-metaclaw.md).
+- **EvoMetaClaw selection loop + GRPO export.** EvoSkillOps could retrain
+  the gate and *evolve* genomes, but nothing made the runtime use an
+  evolved genome — variation with no selection. This closes it: (1)
+  `select_champions` picks the fittest proven genome per role and
+  `EvoSkillOps.promote()` persists the map to `champions.json` (config
+  only — genome + fitness aggregate, never a raw signal); (2)
+  `EvoMetaClaw.champion(role)` reconstructs it and
+  `EngagementLoop.propose(..., prefer_champion=True)` runs it instead of
+  a cold proposal, falling through to the cold path on any
+  missing/malformed champion so selection never blocks an engagement; (3)
+  `export_grpo` flattens `signals.jsonl` into group-normalised
+  `(state, action, reward, advantage)` rows (`grpo.jsonl`) for a
+  downstream GRPO trainer — the offline complement to the runtime
+  `GRPOBuffer`. Two new CLI subcommands, `skillops promote` and
+  `skillops grpo` (both `--json` / `--dry-run`, non-zero on no-op), so a
+  nightly job is `retrain && evolve && promote && grpo`. `GenomeStore`
+  gains atomic `save_champions` / `load_champions` / `save_grpo`. 25 new
+  unit tests; see [docs/evo-metaclaw.md](docs/evo-metaclaw.md).
 - **EvoMetaClaw retrain-freshness alarm (`EvoSkillOps.freshness()`,
   `decepticon-cli skillops status`).** The moat doc named a
   static-registry regression — a silently-dead retrain job freezes the

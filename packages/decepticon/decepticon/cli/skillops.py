@@ -6,6 +6,9 @@ and never leaves that tenancy:
 
   retrain   Refit the Q-gate weights over signals.jsonl and persist them.
   evolve    Spawn mutated children of the fittest genomes.
+  promote   Select + persist the champion genome per role (runtime picks it).
+  grpo      Export the signal corpus as GRPO training rows (grpo.jsonl).
+  nightly   Run the full pass in order: retrain + evolve + promote + grpo.
   report    Print the billing-safe fitness telemetry (aggregates only).
   status    Alarm if the persisted Q-gate has fallen behind its corpus.
 """
@@ -65,6 +68,46 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     evolve.add_argument(
         "--dry-run", action="store_true", help="List children without appending them."
+    )
+
+    promote = sub.add_parser("promote", help="Select + persist the champion genome per role.")
+    promote.add_argument(
+        "--min-signals", type=int, default=3, help="Min signals before a genome is eligible."
+    )
+    promote.add_argument(
+        "--dry-run", action="store_true", help="Show champions without writing champions.json."
+    )
+
+    grpo = sub.add_parser("grpo", help="Export the signal corpus as GRPO training rows.")
+    grpo.add_argument(
+        "--group-size", type=int, default=None, help="Cap each context group to its last N signals."
+    )
+    grpo.add_argument(
+        "--min-group", type=int, default=2, help="Skip contexts with fewer than N signals."
+    )
+    grpo.add_argument(
+        "--dry-run", action="store_true", help="Count rows without writing grpo.jsonl."
+    )
+
+    nightly = sub.add_parser(
+        "nightly", help="Run the full offline pass: retrain + evolve + promote + grpo."
+    )
+    nightly.add_argument("--top-k", type=int, default=3, help="How many fittest genomes spawn.")
+    nightly.add_argument(
+        "--min-signals", type=int, default=3, help="Min signals before a genome is eligible."
+    )
+    nightly.add_argument("--seed", type=int, default=0, help="RNG seed for reproducible mutation.")
+    nightly.add_argument("--group-size", type=int, default=None, help="GRPO per-context cap.")
+    nightly.add_argument(
+        "--skill",
+        action="append",
+        default=None,
+        dest="skill_catalog",
+        metavar="SKILL_ID",
+        help="A skill id mutation may add (repeatable).",
+    )
+    nightly.add_argument(
+        "--dry-run", action="store_true", help="Run the pass without writing any artefact."
     )
 
     sub.add_parser("report", help="Print billing-safe fitness telemetry.")
@@ -163,6 +206,67 @@ def _cmd_report(ops: EvoSkillOps, args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cmd_promote(ops: EvoSkillOps, args: argparse.Namespace) -> int:
+    champions = ops.promote(min_signals=args.min_signals, persist=not args.dry_run)
+    payload = {
+        "champions": {role: c.to_json() for role, c in champions.items()},
+        "persisted": bool(champions) and not args.dry_run,
+    }
+    lines = [f"promote: {len(champions)} champion(s)"]
+    for role, c in sorted(champions.items()):
+        lines.append(
+            f"  {role}: {c.genome.genome_id}  fit {c.fitness:+.3f}  "
+            f"n {c.n_signals}  gen {c.genome.generation}  {list(c.genome.skill_ids)}"
+        )
+    if not champions:
+        lines.append("  (none — no role has an eligible genome yet)")
+    _emit(payload, as_json=args.json, text="\n".join(lines) + "\n")
+    return EXIT_OK if champions else EXIT_NOOP
+
+
+def _cmd_grpo(ops: EvoSkillOps, args: argparse.Namespace) -> int:
+    rows = ops.export_grpo(
+        group_size=args.group_size, min_group=args.min_group, persist=not args.dry_run
+    )
+    contexts = len({r["state_hash"] for r in rows})
+    payload = {
+        "rows": len(rows),
+        "contexts": contexts,
+        "persisted": bool(rows) and not args.dry_run,
+    }
+    text = (
+        f"grpo: {len(rows)} row(s) across {contexts} context(s); "
+        f"{'written' if payload['persisted'] else 'not written'}\n"
+    )
+    _emit(payload, as_json=args.json, text=text)
+    return EXIT_OK if rows else EXIT_NOOP
+
+
+def _cmd_nightly(ops: EvoSkillOps, args: argparse.Namespace) -> int:
+    result = ops.nightly(
+        top_k=args.top_k,
+        min_signals=args.min_signals,
+        skill_catalog=args.skill_catalog,
+        seed=args.seed,
+        group_size=args.group_size,
+        persist=not args.dry_run,
+    )
+    payload = result.to_json()
+    payload["persisted"] = not args.dry_run
+    r = result.retrain
+    lines = [
+        f"nightly pass{' (dry-run)' if args.dry_run else ''}",
+        f"  retrain:    {'trained' if r.trained else 'no-op'} "
+        f"(n={r.n_signals}, acc={r.accuracy:.3f})",
+        f"  evolved:    {result.n_children} child genome(s)",
+        f"  promoted:   {result.n_champions} champion(s)",
+        f"  grpo rows:  {result.n_grpo_rows}",
+        f"  population: {result.report.n_genomes} genome(s), gen<={result.report.max_generation}",
+    ]
+    _emit(payload, as_json=args.json, text="\n".join(lines) + "\n")
+    # Non-zero only when there was nothing to do at all.
+    did_something = r.trained or result.n_children or result.n_champions or result.n_grpo_rows
+    return EXIT_OK if did_something else EXIT_NOOP
 def _cmd_status(ops: EvoSkillOps, args: argparse.Namespace) -> int:
     status = ops.freshness(
         max_age_s=args.max_age_hours * 3600.0,
@@ -189,6 +293,12 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_retrain(ops, args)
     if args.command == "evolve":
         return _cmd_evolve(ops, args)
+    if args.command == "promote":
+        return _cmd_promote(ops, args)
+    if args.command == "grpo":
+        return _cmd_grpo(ops, args)
+    if args.command == "nightly":
+        return _cmd_nightly(ops, args)
     if args.command == "report":
         return _cmd_report(ops, args)
     if args.command == "status":
