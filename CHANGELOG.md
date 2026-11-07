@@ -16,6 +16,20 @@ LangGraph, sandbox) keeps the always-on contract.
 
 ### Added
 
+- **One-command nightly flywheel cycle (`EvoSkillOps.run()`,
+  `decepticon-cli skillops run`).** The offline half had four separate
+  subcommands an operator had to chain in the right order; evolution in
+  particular must select on the *just-retrained* gate, not the previous
+  night's. `run` does the whole cycle — retrain → evolve → report →
+  freshness — persisting the new weights before evolving so the ordering
+  is correct by construction, and returns a single `RunResult` (`--json`
+  emits one object with `retrain` / `children` / `report` / `freshness`).
+  Its exit code is the post-cycle freshness verdict (`3` if the moat is
+  still stale after the run, else `0`), so a crontab needs one line —
+  `decepticon-cli skillops run --json` — to both compound the moat and
+  alarm if the flywheel stalled. `--dry-run` runs the full cycle writing
+  nothing and always exits `0`. 8 new unit tests; see
+  [docs/evo-metaclaw.md](docs/evo-metaclaw.md).
 - **EvoMetaClaw retrain-freshness alarm (`EvoSkillOps.freshness()`,
   `decepticon-cli skillops status`).** The moat doc named a
   static-registry regression — a silently-dead retrain job freezes the

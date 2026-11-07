@@ -132,3 +132,41 @@ def test_status_backlog_alarms_json(tmp_path: Path, capsys) -> None:
     assert payload["is_stale"] is True
     assert payload["state"] == "stale"
     assert payload["n_signals_since_train"] >= 1
+
+
+def test_run_full_cycle_json(tmp_path: Path, capsys) -> None:
+    run_dir = _seed_run_dir(tmp_path)
+    rc = skillops_main(
+        ["--run-dir", str(run_dir), "--json", "run", "--top-k", "1", "--skill", "z"]
+    )
+    assert rc == EXIT_OK
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["retrain"]["trained"] is True
+    assert len(payload["children"]) == 1
+    assert payload["freshness"]["is_stale"] is False
+    assert payload["dry_run"] is False
+    # Side effects happened: weights persisted and the child appended.
+    assert (run_dir / "qgate.json").exists()
+
+
+def test_run_dry_run_persists_nothing(tmp_path: Path) -> None:
+    run_dir = _seed_run_dir(tmp_path)
+    before = len(GenomeStore(run_dir).load_genomes())
+    rc = skillops_main(["--run-dir", str(run_dir), "run", "--dry-run", "--skill", "z"])
+    assert rc == EXIT_OK
+    assert not (run_dir / "qgate.json").exists()
+    assert len(GenomeStore(run_dir).load_genomes()) == before
+
+
+def test_run_empty_corpus_benign(tmp_path: Path, capsys) -> None:
+    rc = skillops_main(["--run-dir", str(tmp_path / "empty"), "run"])
+    # Empty run dir: nothing to train, no signals — benign, not stale.
+    assert rc == EXIT_OK
+    assert "NEVER_TRAINED" in capsys.readouterr().out
+
+
+def test_run_through_main(tmp_path: Path, capsys) -> None:
+    run_dir = _seed_run_dir(tmp_path)
+    rc = cli_main(["skillops", "--run-dir", str(run_dir), "run", "--skill", "z"])
+    assert rc == EXIT_OK
+    assert "cycle complete" in capsys.readouterr().out

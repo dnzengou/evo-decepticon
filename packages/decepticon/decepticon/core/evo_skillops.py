@@ -513,6 +513,33 @@ def check_freshness(
     )
 
 
+@dataclass(frozen=True)
+class RunResult:
+    """Outcome of one full offline cycle (`EvoSkillOps.run`).
+
+    Bundles the four stages a nightly job runs end to end so a single
+    command — and a single JSON blob — carries everything an operator or
+    a cron wrapper needs: what the gate learned, which children were
+    spawned, the billing-safe telemetry, and whether the moat is healthy
+    afterwards.
+    """
+
+    retrain: RetrainResult
+    children: list[Genome]
+    report: FitnessReport
+    freshness: FreshnessStatus
+    dry_run: bool
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "retrain": self.retrain.to_json(),
+            "children": [c.to_json() for c in self.children],
+            "report": self.report.to_json(),
+            "freshness": self.freshness.to_json(),
+            "dry_run": self.dry_run,
+        }
+
+
 class EvoSkillOps:
     """Offline-ops façade: retrain the gate, evolve the population, report.
 
@@ -624,6 +651,50 @@ class EvoSkillOps:
             max_new_signals=max_new_signals,
         )
 
+    def run(
+        self,
+        *,
+        epochs: int = _DEFAULT_EPOCHS,
+        lr: float = _DEFAULT_LR,
+        l2: float = _DEFAULT_L2,
+        top_k: int = _DEFAULT_TOP_K,
+        min_signals: int = _DEFAULT_MIN_SIGNALS,
+        skill_catalog: Sequence[str] | None = None,
+        seed: int = 0,
+        max_age_s: float = _DEFAULT_MAX_AGE_S,
+        max_new_signals: int = _DEFAULT_MAX_NEW_SIGNALS,
+        persist: bool = True,
+    ) -> RunResult:
+        """Run the whole offline cycle in dependency order: retrain the
+        gate, evolve on the *retrained* gate, then report and check
+        freshness over the resulting state.
+
+        This is the headless nightly job. The ordering matters and is the
+        reason to prefer one ``run`` over hand-chaining the subcommands:
+        ``retrain`` persists the new weights first, so ``evolve`` selects
+        the fittest genomes under the policy that was just learned, not
+        last night's. ``report`` and ``freshness`` then observe the
+        post-cycle state. With ``persist=False`` nothing is written — a
+        full dry run of the night's work.
+        """
+        retrain = self.retrain(epochs=epochs, lr=lr, l2=l2, persist=persist)
+        children = self.evolve(
+            top_k=top_k,
+            min_signals=min_signals,
+            skill_catalog=skill_catalog,
+            seed=seed,
+            persist=persist,
+        )
+        report = self.report()
+        freshness = self.freshness(max_age_s=max_age_s, max_new_signals=max_new_signals)
+        return RunResult(
+            retrain=retrain,
+            children=children,
+            report=report,
+            freshness=freshness,
+            dry_run=not persist,
+        )
+
     @classmethod
     def from_evo(cls, evo: EvoMetaClaw) -> EvoSkillOps:
         """Build an ops façade over the same store a runtime instance uses."""
@@ -636,6 +707,7 @@ __all__ = [
     "FitnessReport",
     "FreshnessStatus",
     "RetrainResult",
+    "RunResult",
     "build_report",
     "check_freshness",
     "compute_fitness",

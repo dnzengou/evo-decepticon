@@ -407,3 +407,57 @@ class TestEvoSkillOpsFreshness:
         # Must not raise — the alarm can never itself break the nightly job.
         status = EvoSkillOps(run_dir=run_dir).freshness()
         assert status.state == "never_trained"
+
+
+class TestEvoSkillOpsRun:
+    def test_run_trains_evolves_reports_and_is_fresh(self, tmp_path: Path) -> None:
+        store = GenomeStore(tmp_path / "run")
+        # A fit parent with enough signals to be eligible for evolution.
+        store.append_genome(Genome("good", "recon", ("a", "b"), "ph"))
+        for s in _labelled_corpus():
+            store.append_signal(s)
+        result = EvoSkillOps(store=store).run(top_k=1, min_signals=3, skill_catalog=["z"])
+        assert result.dry_run is False
+        assert result.retrain.trained is True
+        assert (tmp_path / "run" / "qgate.json").exists()  # weights persisted
+        # The corpus signals predate the just-now retrain → no backlog.
+        assert result.freshness.is_stale is False
+        assert result.report.n_signals == 60
+
+    def test_run_evolves_on_the_retrained_gate(self, tmp_path: Path) -> None:
+        # Ordering guarantee: the weights file exists (retrain persisted)
+        # before evolve selected its parents.
+        store = GenomeStore(tmp_path / "run")
+        store.append_genome(Genome("good", "recon", ("a", "b"), "ph"))
+        for s in _labelled_corpus():
+            store.append_signal(s)
+        result = EvoSkillOps(store=store).run(top_k=1, min_signals=3, skill_catalog=["z"])
+        # 'good' is the only eligible parent and a novel '--skill z' mutation
+        # is available, so exactly one child is spawned and persisted.
+        assert len(result.children) == 1
+        assert result.children[0].parent_id == "good"
+        assert result.children[0].generation == 1
+        persisted = {g.genome_id for g in store.load_genomes()}
+        assert result.children[0].genome_id in persisted
+
+    def test_run_dry_run_persists_nothing(self, tmp_path: Path) -> None:
+        run_dir = tmp_path / "run"
+        store = GenomeStore(run_dir)
+        store.append_genome(Genome("good", "recon", ("a", "b"), "ph"))
+        for s in _labelled_corpus():
+            store.append_signal(s)
+        before = len(store.load_genomes())
+        result = EvoSkillOps(store=store).run(
+            top_k=1, min_signals=3, skill_catalog=["z"], persist=False
+        )
+        assert result.dry_run is True
+        assert not (run_dir / "qgate.json").exists()
+        assert len(GenomeStore(run_dir).load_genomes()) == before
+
+    def test_run_on_empty_corpus_is_never_trained(self, tmp_path: Path) -> None:
+        result = EvoSkillOps(run_dir=tmp_path / "run").run()
+        assert result.retrain.trained is False
+        assert result.children == []
+        # No signals at all → benign generation-0 state, not an alarm.
+        assert result.freshness.state == "never_trained"
+        assert result.freshness.is_stale is False

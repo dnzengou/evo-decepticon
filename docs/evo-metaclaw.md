@@ -168,6 +168,9 @@ Composed by the `EvoSkillOps` façade over a `GenomeStore`:
 - `evolve()` — load genomes + signals, evolve, and append the children
   to the lineage log.
 - `report()` — emit the fitness telemetry.
+- `run()` — the whole cycle (`retrain` → `evolve` → `report` →
+  `freshness`) in dependency order, returning a single `RunResult`. The
+  one call a nightly job needs; `persist=False` makes it a full dry run.
 
 ### Closing the loop
 
@@ -187,16 +190,28 @@ decepticon-cli skillops retrain [--epochs N --lr F --l2 F --dry-run]
 decepticon-cli skillops evolve  [--top-k N --min-signals N --skill ID ... --seed N --dry-run]
 decepticon-cli skillops report
 decepticon-cli skillops status  [--max-age-hours H --max-new-signals N]
+decepticon-cli skillops run     [retrain + evolve + status flags --dry-run]
 ```
 
-All four take `--run-dir` (defaults to `$EVO_METACLAW_RUN_DIR` or
+All five take `--run-dir` (defaults to `$EVO_METACLAW_RUN_DIR` or
 `evo-metaclaw-run/`) and `--json`. `retrain` / `evolve` exit non-zero
 (no-op) when there was nothing to train on or no novel mutation — handy
 as a cron guard. `status` is the freshness alarm: exit `0` when the gate
 is fresh (or a genuine generation-0 run with no signals yet), exit `3`
-when it is stale or when signals exist but no retrain ever ran — so a
-nightly `skillops retrain && skillops status` chain pages an operator the
-moment the moat stops compounding.
+when it is stale or when signals exist but no retrain ever ran.
+
+`run` is the **whole nightly cycle in one command** — `retrain` →
+`evolve` → `report` → `status` — in the order that matters: it persists
+the retrained weights *first*, so `evolve` selects the fittest genomes
+under the policy just learned, not last night's. It emits one combined
+summary (`--json` gives one object with `retrain` / `children` /
+`report` / `freshness`) and gates its exit code on the post-cycle
+freshness (`3` if the moat is still stale after the run, else `0`), so a
+crontab needs a single line — `decepticon-cli skillops run --json` — to
+both turn the night's trajectory data into a better policy *and* page an
+operator if the flywheel stalled. `--dry-run` runs the full cycle
+writing nothing and always exits `0` (its freshness line reflects the
+pre-run state, not a verdict on the cycle).
 
 ---
 

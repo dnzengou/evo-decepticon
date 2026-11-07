@@ -8,6 +8,7 @@ and never leaves that tenancy:
   evolve    Spawn mutated children of the fittest genomes.
   report    Print the billing-safe fitness telemetry (aggregates only).
   status    Alarm if the persisted Q-gate has fallen behind its corpus.
+  run       The whole nightly cycle: retrain -> evolve -> report -> status.
 """
 
 from __future__ import annotations
@@ -83,6 +84,43 @@ def _build_parser() -> argparse.ArgumentParser:
         type=int,
         default=50,
         help="Alarm when at least this many signals arrived since the last retrain.",
+    )
+
+    run = sub.add_parser(
+        "run", help="Run the whole nightly cycle: retrain -> evolve -> report -> status."
+    )
+    run.add_argument("--epochs", type=int, default=None, help="Gradient-descent epochs.")
+    run.add_argument("--lr", type=float, default=None, help="Learning rate.")
+    run.add_argument("--l2", type=float, default=None, help="L2 regularisation strength.")
+    run.add_argument("--top-k", type=int, default=3, help="How many fittest genomes spawn.")
+    run.add_argument(
+        "--min-signals", type=int, default=3, help="Min signals before a genome is eligible."
+    )
+    run.add_argument("--seed", type=int, default=0, help="RNG seed for reproducible mutation.")
+    run.add_argument(
+        "--skill",
+        action="append",
+        default=None,
+        dest="skill_catalog",
+        metavar="SKILL_ID",
+        help="A skill id mutation may add (repeatable).",
+    )
+    run.add_argument(
+        "--max-age-hours",
+        type=float,
+        default=36.0,
+        help="Freshness alarm: max hours since the retrain this run just did.",
+    )
+    run.add_argument(
+        "--max-new-signals",
+        type=int,
+        default=50,
+        help="Freshness alarm: max signals left unretrained after this run.",
+    )
+    run.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run the full cycle without persisting weights or children.",
     )
     return p
 
@@ -182,6 +220,45 @@ def _cmd_status(ops: EvoSkillOps, args: argparse.Namespace) -> int:
     return EXIT_STALE if status.is_stale else EXIT_OK
 
 
+def _cmd_run(ops: EvoSkillOps, args: argparse.Namespace) -> int:
+    kwargs: dict = {}
+    if args.epochs is not None:
+        kwargs["epochs"] = args.epochs
+    if args.lr is not None:
+        kwargs["lr"] = args.lr
+    if args.l2 is not None:
+        kwargs["l2"] = args.l2
+    result = ops.run(
+        top_k=args.top_k,
+        min_signals=args.min_signals,
+        skill_catalog=args.skill_catalog,
+        seed=args.seed,
+        max_age_s=args.max_age_hours * 3600.0,
+        max_new_signals=args.max_new_signals,
+        persist=not args.dry_run,
+        **kwargs,
+    )
+    payload = result.to_json()
+    r, fr = result.retrain, result.freshness
+    lines = [
+        f"run: {'DRY RUN (nothing persisted)' if result.dry_run else 'cycle complete'}",
+        f"  retrain:   {'trained' if r.trained else 'no-op (insufficient signal)'}"
+        f"  (signals {r.n_signals}, acc {r.accuracy:.3f})",
+        f"  evolve:    {len(result.children)} child genome(s)",
+        f"  report:    {result.report.n_genomes} genome(s), "
+        f"gen {result.report.max_generation}, {result.report.n_signals} signal(s)",
+        f"  freshness: {fr.state.upper()}{' (STALE)' if fr.is_stale else ''}",
+    ]
+    lines.extend(f"    - {reason}" for reason in fr.reasons)
+    _emit(payload, as_json=args.json, text="\n".join(lines) + "\n")
+    # A dry run persists nothing, so the freshness it reports is the old
+    # (pre-run) state — not a health verdict on this cycle. Only a real
+    # run gates the exit code on post-cycle freshness, for cron.
+    if result.dry_run:
+        return EXIT_OK
+    return EXIT_STALE if fr.is_stale else EXIT_OK
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     ops = EvoSkillOps(store=GenomeStore(args.run_dir))
@@ -193,6 +270,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_report(ops, args)
     if args.command == "status":
         return _cmd_status(ops, args)
+    if args.command == "run":
+        return _cmd_run(ops, args)
     print(f"unknown skillops subcommand: {args.command}", file=sys.stderr)
     return EXIT_CONFIG
 
