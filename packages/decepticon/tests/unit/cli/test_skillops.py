@@ -170,3 +170,38 @@ def test_run_through_main(tmp_path: Path, capsys) -> None:
     rc = cli_main(["skillops", "--run-dir", str(run_dir), "run", "--skill", "z"])
     assert rc == EXIT_OK
     assert "cycle complete" in capsys.readouterr().out
+
+
+def test_run_prompt_hash_flag_can_be_the_only_axis(tmp_path: Path, capsys) -> None:
+    # Seed a single-skill parent so no skill op is available; the only
+    # way to produce a child is via --prompt-hash (the prompt axis).
+    run_dir = tmp_path / "run"
+    store = GenomeStore(run_dir)
+    store.append_genome(Genome("solo", "recon", ("only",), "hash_a"))
+    rng = random.Random(1)
+    # Mixed-label corpus so retrain is not a degenerate no-op (the gate
+    # needs a decision boundary to fit).
+    for i in range(10):
+        store.append_signal(
+            Signal("solo", "recon", f"s{i % 3}", "nmap", 5.0 + rng.random(), 100, 0.5, True)
+        )
+        store.append_signal(
+            Signal("solo", "recon", f"s{i % 3}", "brute", -1.0 + rng.random(), 8000, 8.0, False)
+        )
+    rc = skillops_main(
+        [
+            "--run-dir",
+            str(run_dir),
+            "--json",
+            "run",
+            "--top-k",
+            "1",
+            "--prompt-hash",
+            "hash_b",
+        ]
+    )
+    assert rc == EXIT_OK
+    payload = json.loads(capsys.readouterr().out)
+    assert len(payload["children"]) == 1
+    assert payload["children"][0]["prompt_hash"] == "hash_b"
+    assert payload["children"][0]["skill_ids"] == ["only"]

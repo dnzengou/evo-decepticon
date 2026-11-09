@@ -461,3 +461,67 @@ class TestEvoSkillOpsRun:
         # No signals at all → benign generation-0 state, not an alarm.
         assert result.freshness.state == "never_trained"
         assert result.freshness.is_stale is False
+
+
+class TestPromptAxisMutation:
+    def test_prompt_catalog_opens_prompt_axis(self) -> None:
+        # With no skill mutation available (empty skill_catalog, single
+        # skill so drop is blocked) but a prompt_catalog, mutation must
+        # still find a move — the prompt axis.
+        parent = Genome("g", "recon", ("only",), "hash_a")
+        rng = random.Random(0)
+        child = mutate_genome(parent, rng, skill_catalog=[], prompt_catalog=["hash_b"])
+        assert child is not None
+        assert child.skill_ids == ("only",)  # skills unchanged
+        assert child.prompt_hash == "hash_b"  # prompt swapped
+        assert child.parent_id == "g"
+        assert child.generation == 1
+
+    def test_prompt_catalog_filters_own_hash(self) -> None:
+        # A prompt_catalog whose only entry equals the parent's own
+        # prompt_hash offers no alternative — no mutation.
+        parent = Genome("g", "recon", ("only",), "hash_a")
+        rng = random.Random(0)
+        child = mutate_genome(parent, rng, skill_catalog=[], prompt_catalog=["hash_a"])
+        assert child is None
+
+    def test_prompt_mutation_explored_over_many_seeds(self) -> None:
+        # Across seeds, the prompt op should actually fire sometimes when
+        # a prompt_catalog is supplied — i.e. it isn't a dead branch.
+        parent = Genome("g", "recon", ("a", "b"), "hash_a")
+        got_prompt_move = False
+        for seed in range(60):
+            child = mutate_genome(
+                parent,
+                random.Random(seed),
+                skill_catalog=["c", "d"],
+                prompt_catalog=["hash_b", "hash_c"],
+            )
+            if child is not None and child.prompt_hash != "hash_a":
+                got_prompt_move = True
+                break
+        assert got_prompt_move, "prompt-hash mutation never fired across 60 seeds"
+
+    def test_evolve_population_threads_prompt_catalog(self) -> None:
+        parent = Genome("good", "recon", ("only",), "hash_a")
+        signals = [
+            _sig(genome_id="good", reward=5.0, tokens_used=100, success=True) for _ in range(5)
+        ]
+        children = evolve_population(
+            [parent],
+            signals,
+            top_k=1,
+            min_signals=3,
+            skill_catalog=[],
+            prompt_catalog=["hash_b"],
+            seed=0,
+        )
+        assert len(children) == 1
+        assert children[0].prompt_hash == "hash_b"
+        assert children[0].parent_id == "good"
+
+    def test_evolve_without_catalogs_is_unchanged(self) -> None:
+        # Backward compat: no catalogs at all → no mutation possible.
+        parent = Genome("g", "recon", ("only",), "hash_a")
+        child = mutate_genome(parent, random.Random(0))
+        assert child is None

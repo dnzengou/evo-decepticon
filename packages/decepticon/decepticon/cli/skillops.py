@@ -65,6 +65,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="A skill id mutation may add (repeatable).",
     )
     evolve.add_argument(
+        "--prompt-hash",
+        action="append",
+        default=None,
+        dest="prompt_catalog",
+        metavar="HASH",
+        help="A prompt-hash mutation may swap in (repeatable). Opens the prompt axis.",
+    )
+    evolve.add_argument(
         "--dry-run", action="store_true", help="List children without appending them."
     )
 
@@ -104,6 +112,14 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="skill_catalog",
         metavar="SKILL_ID",
         help="A skill id mutation may add (repeatable).",
+    )
+    run.add_argument(
+        "--prompt-hash",
+        action="append",
+        default=None,
+        dest="prompt_catalog",
+        metavar="HASH",
+        help="A prompt-hash mutation may swap in (repeatable). Opens the prompt axis.",
     )
     run.add_argument(
         "--max-age-hours",
@@ -162,6 +178,7 @@ def _cmd_evolve(ops: EvoSkillOps, args: argparse.Namespace) -> int:
         top_k=args.top_k,
         min_signals=args.min_signals,
         skill_catalog=args.skill_catalog,
+        prompt_catalog=args.prompt_catalog,
         seed=args.seed,
         persist=not args.dry_run,
     )
@@ -232,6 +249,7 @@ def _cmd_run(ops: EvoSkillOps, args: argparse.Namespace) -> int:
         top_k=args.top_k,
         min_signals=args.min_signals,
         skill_catalog=args.skill_catalog,
+        prompt_catalog=args.prompt_catalog,
         seed=args.seed,
         max_age_s=args.max_age_hours * 3600.0,
         max_new_signals=args.max_new_signals,

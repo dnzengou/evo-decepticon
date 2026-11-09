@@ -155,7 +155,7 @@ population. Also stdlib-only.
 |----------------------|--------------------------------------------------------------------------------------------------|
 | `retrain_qgate`      | Refit the linear Q-gate by logistic regression over the signal corpus, predicting `success` from `(reward, tokens_used, wallclock_s)`. Features are standardised for stable gradient descent, then the coefficients are mapped back to raw-feature space so they drop straight into `QGate` under the unchanged `score() >= threshold` rule. |
 | `compute_fitness`    | Rank genomes by mean Q-gate score — reward *net of* token/wallclock cost, so a genome that wins cheaply outranks one that wins the same reward by burning the budget. |
-| `evolve_population`  | Select the top-k eligible genomes (gated by a minimum signal count so one lucky turn can't seed a generation) and spawn skill-mutated children — drop / add / swap a skill — wiring `parent_id` + `generation` so lineage compounds. |
+| `evolve_population`  | Select the top-k eligible genomes (gated by a minimum signal count so one lucky turn can't seed a generation) and spawn mutated children on two axes — the skill set (drop / add / swap) and, when a `prompt_catalog` is supplied, the prompt (re-point `prompt_hash` at a different candidate variant) — wiring `parent_id` + `generation` so lineage compounds. The op is chosen uniformly across the ops that are actually feasible for this parent + catalogs, so a lineage with a rich prompt catalog explores prompts about as often as skills rather than being starved by a long skill menu. |
 | `build_report`       | Aggregate the corpus into the billing-safe telemetry (`generation`, `signal_count`, fitness histogram). Aggregates only — never a raw signal. |
 | `check_freshness`    | Classify the persisted gate against the corpus it should reflect — `never_trained` / `fresh` / `stale` with human-readable reasons — so a silently-dead retrain job (the static-registry regression) raises an alarm instead of freezing the moat unnoticed. |
 
@@ -187,7 +187,7 @@ tenancy inherits the weights its operators have trained.
 
 ```
 decepticon-cli skillops retrain [--epochs N --lr F --l2 F --dry-run]
-decepticon-cli skillops evolve  [--top-k N --min-signals N --skill ID ... --seed N --dry-run]
+decepticon-cli skillops evolve  [--top-k N --min-signals N --skill ID ... --prompt-hash HASH ... --seed N --dry-run]
 decepticon-cli skillops report
 decepticon-cli skillops status  [--max-age-hours H --max-new-signals N]
 decepticon-cli skillops run     [retrain + evolve + status flags --dry-run]

@@ -16,6 +16,21 @@ LangGraph, sandbox) keeps the always-on contract.
 
 ### Added
 
+- **Prompt axis for genome evolution (`mutate_genome` /
+  `evolve_population` / `skillops evolve|run --prompt-hash`).** Evolution
+  previously varied only the skill set — every lineage was locked to its
+  parent's `prompt_hash`, so the moat's search space missed an entire
+  dimension the Genome dataclass was already designed for. `mutate_genome`
+  now takes an optional `prompt_catalog` and can emit a child whose
+  prompt is swapped to one of the candidate variants (keeping
+  `parent_id` + `generation` wiring, and still collapsing onto an
+  existing lineage when the content hash collides). The chosen op is
+  picked uniformly across the ops actually feasible for this parent +
+  catalogs, so a lineage with prompt alternatives explores prompts about
+  as often as skills rather than being starved by a long skill menu.
+  `skillops evolve` and `skillops run` expose it as `--prompt-hash HASH`
+  (repeatable). Backward-compatible: with no catalog supplied, the prompt
+  axis is dormant and existing behavior is unchanged. 6 new unit tests.
 - **One-command nightly flywheel cycle (`EvoSkillOps.run()`,
   `decepticon-cli skillops run`).** The offline half had four separate
   subcommands an operator had to chain in the right order; evolution in

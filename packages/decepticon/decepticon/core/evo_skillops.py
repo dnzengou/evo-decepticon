@@ -251,17 +251,28 @@ def mutate_genome(
     parent: Genome,
     rng: random.Random,
     skill_catalog: Sequence[str] | None = None,
+    prompt_catalog: Sequence[str] | None = None,
 ) -> Genome | None:
     """Spawn one mutated child genome, or ``None`` if no change is possible.
 
-    Mutation operates on the skill set — the one part of a genome this
-    offline pass can vary without re-authoring a prompt. The child's
-    ``genome_id`` is the same content hash :meth:`EvoMetaClaw.propose`
-    computes, so a mutation that happens to reproduce an existing config
-    collapses onto that lineage instead of forking a duplicate.
+    Mutation varies either axis of a genome this offline pass can touch
+    without re-authoring code: the skill set (drop / add / swap a skill
+    id) or the prompt (re-point ``prompt_hash`` at a different entry in
+    ``prompt_catalog`` — the candidate prompt variants the runtime knows
+    how to load). The chosen op is picked uniformly across the ops that
+    are actually feasible for this parent + catalogs, so a lineage with a
+    rich prompt catalog explores prompts about as often as skills rather
+    than being starved by a long skill menu.
+
+    The child's ``genome_id`` is the same content hash
+    :meth:`EvoMetaClaw.propose` computes, so a mutation that happens to
+    reproduce an existing config collapses onto that lineage instead of
+    forking a duplicate.
     """
     skills = list(parent.skill_ids)
     addable = [s for s in (skill_catalog or ()) if s not in skills]
+    prompt_hash = parent.prompt_hash
+    prompt_alts = [p for p in (prompt_catalog or ()) if p != prompt_hash]
 
     ops: list[str] = []
     if len(skills) > 1:
@@ -270,6 +281,8 @@ def mutate_genome(
         ops.append("add")
     if addable and skills:
         ops.append("swap")
+    if prompt_alts:
+        ops.append("prompt")
     if not ops:
         return None
 
@@ -278,12 +291,14 @@ def mutate_genome(
         skills.pop(rng.randrange(len(skills)))
     elif op == "add":
         skills.append(rng.choice(addable))
-    else:  # swap
+    elif op == "swap":
         skills[rng.randrange(len(skills))] = rng.choice(addable)
+    else:  # prompt
+        prompt_hash = rng.choice(prompt_alts)
 
     child_skills = tuple(skills)
     genome_id = hash_state(
-        {"role": parent.role, "skills": list(child_skills), "prompt_hash": parent.prompt_hash}
+        {"role": parent.role, "skills": list(child_skills), "prompt_hash": prompt_hash}
     )
     if genome_id == parent.genome_id:
         return None
@@ -291,7 +306,7 @@ def mutate_genome(
         genome_id=genome_id,
         role=parent.role,
         skill_ids=child_skills,
-        prompt_hash=parent.prompt_hash,
+        prompt_hash=prompt_hash,
         parent_id=parent.genome_id,
         generation=parent.generation + 1,
     )
@@ -305,6 +320,7 @@ def evolve_population(
     top_k: int = _DEFAULT_TOP_K,
     min_signals: int = _DEFAULT_MIN_SIGNALS,
     skill_catalog: Sequence[str] | None = None,
+    prompt_catalog: Sequence[str] | None = None,
     seed: int = 0,
 ) -> list[Genome]:
     """Select the fittest genomes and return their mutated children.
@@ -333,7 +349,7 @@ def evolve_population(
             # can't mutate a skill set we never recorded. Skip it.
             continue
         promoted += 1
-        child = mutate_genome(parent, rng, skill_catalog)
+        child = mutate_genome(parent, rng, skill_catalog, prompt_catalog)
         if child is None or child.genome_id in known:
             continue
         known.add(child.genome_id)
@@ -594,6 +610,7 @@ class EvoSkillOps:
         top_k: int = _DEFAULT_TOP_K,
         min_signals: int = _DEFAULT_MIN_SIGNALS,
         skill_catalog: Sequence[str] | None = None,
+        prompt_catalog: Sequence[str] | None = None,
         seed: int = 0,
         persist: bool = True,
     ) -> list[Genome]:
@@ -607,6 +624,7 @@ class EvoSkillOps:
             top_k=top_k,
             min_signals=min_signals,
             skill_catalog=skill_catalog,
+            prompt_catalog=prompt_catalog,
             seed=seed,
         )
         if persist:
@@ -660,6 +678,7 @@ class EvoSkillOps:
         top_k: int = _DEFAULT_TOP_K,
         min_signals: int = _DEFAULT_MIN_SIGNALS,
         skill_catalog: Sequence[str] | None = None,
+        prompt_catalog: Sequence[str] | None = None,
         seed: int = 0,
         max_age_s: float = _DEFAULT_MAX_AGE_S,
         max_new_signals: int = _DEFAULT_MAX_NEW_SIGNALS,
@@ -682,6 +701,7 @@ class EvoSkillOps:
             top_k=top_k,
             min_signals=min_signals,
             skill_catalog=skill_catalog,
+            prompt_catalog=prompt_catalog,
             seed=seed,
             persist=persist,
         )
